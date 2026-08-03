@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Project Sora" />
+    <title>Project Sora</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#mainContent">Skip to main content</a>
+    <div id="backgroundRotator" class="background-rotator background-rotator--primary" aria-hidden="true"></div>
+    <div id="backgroundRotatorSecondary" class="background-rotator background-rotator--secondary" aria-hidden="true"></div>
+    <div class="app-shell">
+      <header class="topbar">
+        <button id="menuToggle" class="menu-toggle" type="button" aria-label="Open menu" aria-controls="sideMenu" aria-expanded="false">☰</button>
+        <button id="installButton" class="install-button" type="button" hidden aria-label="Install Project Sora">Install App</button>
+        <div class="topbar-search">
+          <div class="search-input-wrap">
+            <input id="gameSearch" type="search" placeholder="Search games or users" aria-label="Search games or users" aria-controls="gameSearchResults" aria-expanded="false" autocomplete="off" />
+            <div id="gameSearchResults" class="suggestions hidden" role="listbox" aria-label="Search results"></div>
+          </div>
+        </div>
+      </header>
+
+      <div class="workspace">
+        <aside id="sideMenu" class="side-menu" aria-label="Primary navigation and account tools">
+          <div class="side-menu-inner">
+            <section class="card panel login-screen">
+              <div class="login-branding">
+                <div>
+                  <p class="eyebrow">Project Sora</p>
+                  <h2>Discover your next favorite game</h2>
+                  <p class="brand-copy">A refined game library, release spotlight, and user profile experience for beta testing across mobile and desktop.</p>
+                </div>
+                <div class="sora-rotator">
+                  <div class="sora-rotator-track">
+                    <img src="https://steamcdn-a.akamaihd.net/steam/apps/1245620/header.jpg" alt="Elden Ring" />
+                    <img src="https://steamcdn-a.akamaihd.net/steam/apps/2507950/header.jpg" alt="Final Fantasy VII Rebirth" />
+                    <img src="https://steamcdn-a.akamaihd.net/steam/apps/1544020/header.jpg" alt="Spider-Man 2" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="field-group">
+                <label for="username">Library owner</label>
+                <input id="username" type="text" placeholder="Enter your email" aria-label="Library owner email" />
+                <div class="actions-row">
+                  <button id="switchUser" type="button" aria-label="Open selected library">Open Library</button>
+                  <button id="logoutButton" type="button" class="danger" aria-label="Log out of current account">Logout</button>
+                </div>
+              </div>
+
+              <div class="auth-card auth-card--single">
+                <div class="auth-section">
+                  <h3>Register</h3>
+                  <input id="registerUsername" type="email" placeholder="Email" aria-label="Register email" />
+                  <input id="registerPassword" type="password" placeholder="Password" aria-label="Register password" />
+                  <label class="checkbox-row">
+                    <input id="rememberMe" type="checkbox" />
+                    <span>Remember me on this device</span>
+                  </label>
+                  <button id="registerButton" type="button">Create account</button>
+                </div>
+
+                <div class="auth-section auth-section--secondary">
+                  <h3>Login</h3>
+                  <input id="loginUsername" type="email" placeholder="Email" aria-label="Login email" />
+                  <input id="loginPassword" type="password" placeholder="Password" aria-label="Login password" />
+                  <label class="checkbox-row">
+                    <input id="rememberMeLogin" type="checkbox" />
+                    <span>Remember me on this device</span>
+                  </label>
+                  <button id="loginButton" type="button">Login</button>
+                </div>
+              </div>
+
+              <div class="field-group">
+                <button id="statisticsNavButton" type="button" class="ghost" aria-label="Open collection statistics dashboard">Open Statistics</button>
+                <button id="wishlistNavButton" type="button" class="ghost" aria-label="Jump to wishlist">Go to Wishlist</button>
+                <div id="betaDownloadStatus" class="beta-download-status" role="status" aria-live="polite">Beta downloads are currently unavailable.</div>
+                <div id="syncStatus" class="sync-status" role="status" aria-live="polite">Sync status: idle</div>
+              </div>
+              <div class="summary-grid" id="summaryGrid"></div>
+              <div class="profile-hub">
+                <div class="field-group">
+                  <label for="friendInput">Find people</label>
+                  <div class="friends-row">
+                    <input id="friendInput" type="text" placeholder="Search public handles" aria-label="Search public users" />
+                    <button id="addFriendButton" type="button" aria-label="Search public users">Search</button>
+                  </div>
+                  <div class="friends-section">
+                    <h3>Friends</h3>
+                    <div id="friendsList" class="friends-list"></div>
+                  </div>
+                  <div class="friends-section">
+                    <h3>Incoming Requests</h3>
+                    <div id="incomingRequestsList" class="friends-list"></div>
+                  </div>
+                  <div class="friends-section">
+                    <h3>Sent Requests</h3>
+                    <div id="outgoingRequestsList" class="friends-list"></div>
+                  </div>
+                </div>
+                <div class="profile-stats">
+                  <div class="summary-card">
+                    <span>Total playtime</span>
+                    <strong id="profilePlaytime">0 hrs</strong>
+                  </div>
+                  <div class="summary-card">
+                    <span>Average completion</span>
+                    <strong id="profileCompletion">0%</strong>
+                  </div>
+                </div>
+                <div class="field-group privacy-panel">
+                  <div class="privacy-panel__header">
+                    <h3>Privacy controls</h3>
+                    <button id="previewProfileButton" type="button" class="ghost">Preview my profile</button>
+                  </div>
+                  <p class="section-caption">Choose who can view your profile, library, reviews, and activity.</p>
+                  <label class="privacy-setting">
+                    <span>Profile visibility</span>
+                    <select id="profileVisibilitySelect">
+                      <option value="Public">Public</option>
+                      <option value="Friends Only">Friends Only</option>
+                      <option value="Private">Private</option>
+                    </select>
+                  </label>
+                  <label class="privacy-setting">
+                    <span>Library visibility</span>
+                    <select id="libraryVisibilitySelect">
+                      <option value="Public">Public</option>
+                      <option value="Friends Only">Friends Only</option>
+                      <option value="Private">Private</option>
+                    </select>
+                  </label>
+                  <label class="privacy-setting">
+                    <span>Reviews visibility</span>
+                    <select id="reviewsVisibilitySelect">
+                      <option value="Public">Public</option>
+                      <option value="Friends Only">Friends Only</option>
+                      <option value="Private">Private</option>
+                    </select>
+                  </label>
+                  <label class="privacy-setting">
+                    <span>Activity visibility</span>
+                    <select id="activityVisibilitySelect">
+                      <option value="Public">Public</option>
+                      <option value="Friends Only">Friends Only</option>
+                      <option value="Private">Private</option>
+                    </select>
+                  </label>
+                  <button id="savePrivacyButton" type="button">Save privacy settings</button>
+                  <div id="privacyStatus" class="beta-download-status" role="status" aria-live="polite">Privacy settings are not yet saved.</div>
+                  <div id="profilePreviewPanel" class="profile-preview-card" aria-live="polite"></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="card panel">
+              <h2>Add a Game</h2>
+              <form id="gameForm" class="game-form">
+                <div class="form-grid">
+                  <label>
+                    Title
+                    <input id="titleInput" name="title" type="text" placeholder="Example: Final Fantasy VII" required autocomplete="off" />
+                    <div id="titleSuggestions" class="suggestions hidden" role="listbox" aria-label="Title suggestions"></div>
+                  </label>
+                  <label>
+                    Platform
+                    <input id="platformInput" name="platform" type="text" placeholder="PlayStation, Switch, PC" required />
+                  </label>
+                  <label>
+                    Condition
+                    <select name="condition">
+                      <option>Mint</option>
+                      <option>Good</option>
+                      <option>Fair</option>
+                      <option>Poor</option>
+                    </select>
+                  </label>
+                  <label>
+                    Purchase Price ($)
+                    <input name="purchasePrice" type="number" min="0" step="0.01" placeholder="39.99" required />
+                  </label>
+                  <label>
+                    Current Value ($)
+                    <input name="currentValue" type="number" min="0" step="0.01" placeholder="59.99" required />
+                  </label>
+                  <label>
+                    Metacritic Score
+                    <input name="metacriticScore" type="number" min="0" max="100" step="1" placeholder="85" />
+                  </label>
+                  <input type="hidden" name="coverImage" />
+                  <label>
+                    Play status
+                    <select name="status">
+                      <option value="Backlog">Backlog</option>
+                      <option value="Playing">Playing</option>
+                      <option value="Paused">Paused</option>
+                      <option value="Completed">Completed</option>
+                      <option value="Dropped">Dropped</option>
+                    </select>
+                  </label>
+                  <label>
+                    Completion %
+                    <input name="completionPercent" type="number" min="0" max="100" step="1" placeholder="0" />
+                  </label>
+                  <label>
+                    Notes
+                    <input name="notes" type="text" placeholder="Collector edition, missing case" />
+                  </label>
+                </div>
+                <div class="actions-row">
+                  <button type="submit">Save Game</button>
+                  <label class="upload-button">
+                    Import CSV
+                    <input id="csvUpload" type="file" accept=".csv" />
+                  </label>
+                  <button id="exportCsv" type="button">Export CSV</button>
+                </div>
+              </form>
+            </section>
+
+            <section class="card panel">
+              <div class="section-title-row">
+                <h2>Play Next</h2>
+                <div class="play-next-filters" aria-label="Play Next filters">
+                  <label>
+                    <span class="status-filter__label">Platform</span>
+                    <input id="playNextPlatformFilter" type="text" placeholder="PC" />
+                  </label>
+                  <label>
+                    <span class="status-filter__label">Genre</span>
+                    <input id="playNextGenreFilter" type="text" placeholder="RPG" />
+                  </label>
+                  <label>
+                    <span class="status-filter__label">Max playtime</span>
+                    <input id="playNextMaxPlaytimeFilter" type="number" min="0" step="30" placeholder="180" />
+                  </label>
+                  <button id="playNextResetFiltersButton" type="button" class="ghost">Reset</button>
+                </div>
+              </div>
+              <div id="gameMatchCard" class="match-card"></div>
+            </section>
+          </div>
+        </aside>
+
+        <main id="mainContent" class="content-area" tabindex="-1">
+          <section class="card panel wide-panel release-stage">
+            <div class="section-title-row">
+              <div>
+                <h2>Upcoming Releases</h2>
+                <p class="section-caption">A rotating spotlight of upcoming launches and collector-favorite releases.</p>
+              </div>
+              <div class="release-toolbar">
+                <span class="release-badge">Live release calendar</span>
+                <button id="releasePrevButton" type="button" class="ghost" aria-label="View previous release">←</button>
+                <button id="releaseNextButton" type="button" class="ghost" aria-label="View next release">→</button>
+              </div>
+            </div>
+            <div id="upcomingReleaseRotator" class="upcoming-release-rotator" tabindex="0"></div>
+          </section>
+
+          <section class="card panel wide-panel">
+            <div class="section-title-row">
+              <h2>Your Library</h2>
+              <div class="library-toolbar">
+                <label class="status-filter">
+                  <span class="status-filter__label">Filter by status</span>
+                  <select id="statusFilter" aria-label="Filter library by play status">
+                    <option value="All">All statuses</option>
+                  </select>
+                </label>
+                <button id="clearLibrary" type="button" class="danger" aria-label="Clear current library">Clear Current Library</button>
+              </div>
+            </div>
+            <div id="emptyState" class="empty-state">No games yet. Add your first title to start tracking its value.</div>
+            <div id="gamesList" class="games-list"></div>
+          </section>
+
+          <section class="card panel wide-panel">
+            <div class="section-title-row">
+              <h2>Wishlist</h2>
+            </div>
+            <div id="wishlistContainer" class="wishlist-grid"></div>
+          </section>
+
+          <section class="card panel wide-panel">
+            <div class="section-title-row">
+              <h2>Notifications</h2>
+            </div>
+            <p class="section-caption">Price alerts are in-app only for now. Prices may be delayed and should be confirmed at the retailer.</p>
+            <div id="notificationsContainer" class="wishlist-grid"></div>
+          </section>
+
+          <section class="card panel wide-panel">
+            <div class="section-title-row">
+              <h2>Play Queue</h2>
+            </div>
+            <div id="queueContainer" class="queue-panel"></div>
+          </section>
+
+          <section id="statisticsPage" class="card panel wide-panel hidden" aria-labelledby="statisticsHeading">
+            <div class="section-title-row">
+              <div>
+                <h2 id="statisticsHeading">Collection Statistics</h2>
+                <p class="section-caption">A readable overview of your current library, value, activity, and platform mix.</p>
+              </div>
+              <button id="backToLibraryFromStats" type="button" aria-label="Return to library">← Back to library</button>
+            </div>
+            <div id="statisticsContent" class="statistics-content"></div>
+          </section>
+
+          <section id="detailPage" class="card panel wide-panel hidden">
+            <div class="section-title-row">
+              <button id="backToLibrary" type="button" aria-label="Return to library">← Back to library</button>
+              <div class="detail-actions">
+                <button id="prevGame" type="button" aria-label="View previous game">← Prev</button>
+                <h2 id="detailTitle">Game details</h2>
+                <button id="nextGame" type="button" aria-label="View next game">Next →</button>
+              </div>
+            </div>
+            <div id="gameDetailContent" class="detail-content"></div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

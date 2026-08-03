@@ -1,0 +1,56 @@
+[
+  {
+    "id": "game-zelda-breath",
+    "name": "The Legend of Zelda: Breath of the Wild",
+    "platform": "Nintendo Switch",
+    "price": 49.99,
+    "metacriticScore": 97,
+    "image": "https://placehold.co/72x72/0f172a/ffffff?text=Zelda",
+    "description": "A beloved open-world adventure with strong collector demand."
+  },
+  {
+    "id": "game-cyberpunk-2077",
+    "name": "Cyberpunk 2077",
+    "platform": "PC / PlayStation / Xbox",
+    "price": 39.99,
+    "metacriticScore": 86,
+    "image": "https://placehold.co/72x72/0f172a/ffffff?text=Cyberpunk",
+    "description": "A futuristic RPG with broad platform support and shifting value."
+  },
+  {
+    "id": "game-spiderman-2",
+    "name": "Spider-Man 2",
+    "platform": "PlayStation 5",
+    "price": 69.99,
+    "metacriticScore": 90,
+    "image": "https://placehold.co/72x72/0f172a/ffffff?text=Spiderman",
+    "description": "High-demand PS5 action title with strong resale interest."
+  },
+  {
+    "id": "game-ff7-rebirth",
+    "name": "Final Fantasy VII Rebirth",
+    "platform": "PlayStation 5",
+    "price": 59.99,
+    "metacriticScore": 93,
+    "image": "https://placehold.co/72x72/0f172a/ffffff?text=FF7",
+    "description": "A premium RPG title that remains popular with collectors."
+  },
+  {
+    "id": "game-mario-kart-8",
+    "name": "Mario Kart 8 Deluxe",
+    "platform": "Nintendo Switch",
+    "price": 44.99,
+    "metacriticScore": 92,
+    "image": "https://placehold.co/72x72/0f172a/ffffff?text=MK8",
+    "description": "A long-running Switch favorite with steady value."
+  },
+  {
+    "id": "game-elden-ring",
+    "name": "Elden Ring",
+    "platform": "PC / PlayStation / Xbox",
+    "price": 54.99,
+    "metacriticScore": 95,
+    "image": "https://placehold.co/72x72/0f172a/ffffff?text=Elden",
+    "description": "A major fantasy release with strong critical and collector appeal."
+  }
+]
