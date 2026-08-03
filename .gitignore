@@ -7,3 +7,9 @@ npm-debug.log
 .DS_Store
 .vscode/settings.json
 *.sqlite
+*.log
+coverage/
+dist/
+build/
+tmp/
+temp/

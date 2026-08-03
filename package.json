@@ -1,8 +1,8 @@
 {
-  "name": "video-game-app",
+  "name": "project-sora",
   "version": "1.0.0",
   "private": true,
-  "description": "Browser-based game library app",
+  "description": "Project Sora is a browser-based game library and discovery dashboard.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
