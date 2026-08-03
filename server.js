@@ -25,13 +25,15 @@ const NOTIFICATIONS_FILE = path.join(DATA_DIR, 'notifications.json');
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
-  '.svg': 'image/svg+xml'
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon'
 };
 
 const sessions = new Map();
@@ -1488,7 +1490,7 @@ function isSafeStaticPath(urlPath) {
     'index.html', 'offline.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'helpers.js',
     'catalog-data.js', 'csv-utils.mjs', 'search-utils.mjs', 'catalog-routing.mjs', 'profile-privacy.mjs',
     'profile-privacy.js', 'library-view-utils.mjs', 'play-next-utils.mjs', 'play-next-utils.cjs',
-    'queue-utils.js', 'search-experience.mjs', 'statistics-utils.mjs', 'sw.js'
+    'queue-utils.js', 'search-experience.mjs', 'statistics-utils.mjs', 'sw.js', 'favicon.ico'
   ]);
   const isAllowedAsset = allowedPublicFiles.has(relativePath) || relativePath.startsWith('icons/');
   if (hasExtension) {

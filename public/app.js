@@ -5,7 +5,7 @@ import { createDebouncedRequest } from './search-utils.mjs';
 import { createCatalogSlug, findCatalogEntryBySlug } from './catalog-routing.mjs';
 import { createPublicHandle } from './profile-privacy.mjs';
 import { createEmptySearchStateMarkup, createSearchResultMarkup as createSearchExperienceMarkup, handleSuggestionKeyboard as handleSearchKeyboard } from './search-experience.mjs';
-import { buildCollectionStatistics, formatCurrency, formatPlaytime as formatStatsPlaytime } from './statistics-utils.mjs';
+import { buildCollectionStatistics, formatCurrency } from './statistics-utils.mjs';
 import { resolveLibraryOwner, canEditViewedLibrary, createAnonymousSessionState } from './library-view-utils.mjs';
 import { buildPlayNextRecommendations, createRecommendationState } from './play-next-utils.mjs';
 import { getLocalQueueItems, saveLocalQueueItems, normalizeQueueEntry, reconcileQueueEntries } from './queue-utils.js';
@@ -460,7 +460,7 @@ function renderCollectionStatistics() {
       </article>
       <article class="stats-card">
         <span>Total playtime</span>
-        <strong>${formatStatsPlaytime(stats.totalRecordedPlaytime)}</strong>
+        <strong>${formatPlaytime(stats.totalRecordedPlaytime)}</strong>
       </article>
       <article class="stats-card">
         <span>Average completion</span>
@@ -1982,7 +1982,7 @@ function renderFriendHub() {
     ? games.reduce((sum, game) => sum + Number(game.completionPercent || 0), 0) / games.length
     : 0;
 
-  profilePlaytime.textContent = formatStatsPlaytime(totalPlaytime);
+  profilePlaytime.textContent = formatPlaytime(totalPlaytime);
   profileCompletion.textContent = `${Math.round(completionAverage)}%`;
 
   const buildEmptyState = (message) => `<div class="friend-pill friend-pill--empty">${escapeHtml(message)}</div>`;
