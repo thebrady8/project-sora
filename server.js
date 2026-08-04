@@ -3114,6 +3114,60 @@ function createServer() {
     return respond(200,{collections,generatedAt:new Date().toISOString()});
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/discovery/hub') {
+    try {
+      const platform = String(url.searchParams.get('platform') || '').trim();
+      const genre = String(url.searchParams.get('genre') || '').trim();
+
+      if (!platform && !genre) {
+        return respond(400, {
+          error: 'A platform or genre filter is required.',
+          requestId
+        });
+      }
+
+      const catalogValue = readJson(CATALOG_FILE, defaultCatalog);
+      const catalog = Array.isArray(catalogValue) ? catalogValue : defaultCatalog;
+
+      const result = buildRecommendations(
+        catalog,
+        {
+          library: [],
+          wishlist: [],
+          favoriteGameIds: [],
+          decisions: [],
+          preferences: {}
+        },
+        {
+          limit: Math.min(
+            50,
+            Math.max(1, Number(url.searchParams.get('limit') || 20))
+          ),
+          cursor: Math.max(
+            0,
+            Number(url.searchParams.get('cursor') || 0)
+          ),
+          platform,
+          genre,
+          excludeWishlist: false
+        }
+      );
+
+      return respond(200, {
+        items: Array.isArray(result.items)
+          ? result.items
+          : Array.isArray(result.recommendations)
+            ? result.recommendations
+            : [],
+        nextCursor: result.nextCursor ?? null,
+        generatedAt: new Date().toISOString(),
+        mode: 'public-hub'
+      });
+    } catch (error) {
+      return handleServerError(req, res, error, requestId);
+    }
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/discovery/recommendations') {
     const username = ensureAuthenticated(req, res);
     if (!username) return;

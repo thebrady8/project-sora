@@ -5695,7 +5695,7 @@ async function openDiscoveryHub(type,value) {
   const results=document.getElementById('hubResults'); if(!results)return;
   results.setAttribute('aria-busy','true');
   results.innerHTML='<div class="skeleton-card" aria-hidden="true"></div>';
-  try { const q=new URLSearchParams({limit:String(DISCOVERY_PAGE_SIZE),cursor:'0'}); q.set(type,value); const data=await apiRequest(`/api/discovery/recommendations?${q}`);
+  try { const q=new URLSearchParams({limit:String(DISCOVERY_PAGE_SIZE),cursor:'0'}); q.set(type,value); const data=await apiRequest(`/api/discovery/hub?${q}`);
     const items=(data.items||[]).map(mapDiscoveryCard); results.removeAttribute('aria-busy'); results.innerHTML=items.length?`<div class="hub-result-grid">${items.map(i=>`<button type="button" class="hub-result-card" data-catalog-id="${escapeHtml(String(i.id||''))}"><img src="${escapeHtml(i.image)}" alt=""><strong>${escapeHtml(i.title)}</strong><span>${escapeHtml(i.platform||'')}</span></button>`).join('')}</div>`:'<div class="empty-state">No recommendations are available for this hub yet.</div>';
   } catch { results.removeAttribute('aria-busy'); results.innerHTML='<div class="empty-state">This hub could not load. Try again.</div>'; }
 }
