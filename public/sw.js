@@ -1,64 +1,124 @@
-const CACHE_NAME = 'project-sora-static-v3';
-const APP_SHELL_URLS = ['/', '/index.html', '/offline.html', '/styles.css', '/app.js', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/maskable-512.png'];
+const CACHE_VERSION = 'project-sora-v7';
+const STATIC_CACHE = `${CACHE_VERSION}-static`;
+const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
-function shouldBypassCache(requestUrl) {
-  return requestUrl.pathname.startsWith('/api/') || requestUrl.pathname.startsWith('/data/') || requestUrl.pathname.includes('/private/') || requestUrl.pathname.includes('/profile/') || requestUrl.searchParams.has('token') || requestUrl.searchParams.has('auth');
+const PRECACHE_URLS = [
+  '/offline.html',
+  '/styles.css',
+  '/manifest.webmanifest',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/maskable-512.png'
+];
+
+function isPrivateOrDynamic(url) {
+  return (
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/data/') ||
+    url.pathname.includes('/private/') ||
+    url.searchParams.has('token') ||
+    url.searchParams.has('auth')
+  );
+}
+
+function isCodeOrDocument(request, url) {
+  return (
+    request.mode === 'navigate' ||
+    url.pathname === '/' ||
+    url.pathname.endsWith('.html') ||
+    url.pathname.endsWith('.js') ||
+    url.pathname.endsWith('.mjs') ||
+    url.pathname.endsWith('.json') ||
+    url.pathname.endsWith('.webmanifest')
+  );
+}
+
+async function networkFirst(request, fallbackUrl = null) {
+  try {
+    const response = await fetch(request, { cache: 'no-store' });
+    if (response && response.ok && response.type === 'basic') {
+      const cache = await caches.open(RUNTIME_CACHE);
+      await cache.put(request, response.clone());
+    }
+    return response;
+  } catch (error) {
+    const cached = await caches.match(request, { ignoreSearch: false });
+    if (cached) return cached;
+    if (fallbackUrl) {
+      const fallback = await caches.match(fallbackUrl);
+      if (fallback) return fallback;
+    }
+    throw error;
+  }
+}
+
+async function staleWhileRevalidate(request) {
+  const cache = await caches.open(STATIC_CACHE);
+  const cached = await cache.match(request, { ignoreSearch: true });
+  const networkPromise = fetch(request).then(async (response) => {
+    if (response && response.ok && response.type === 'basic') {
+      await cache.put(request, response.clone());
+    }
+    return response;
+  }).catch(() => null);
+  return cached || networkPromise || Response.error();
 }
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL_URLS)).then(() => self.skipWaiting())
+    caches.open(STATIC_CACHE)
+      .then((cache) => cache.addAll(PRECACHE_URLS))
+      .then(() => self.skipWaiting())
   );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+    caches.keys()
+      .then((keys) => Promise.all(
+        keys
+          .filter((key) => key !== STATIC_CACHE && key !== RUNTIME_CACHE)
+          .map((key) => caches.delete(key))
+      ))
       .then(() => self.clients.claim())
-      .then(() => self.clients.matchAll().then((clients) => clients.forEach((client) => client.postMessage({ type: 'SW_UPDATED' }))))
   );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('fetch', (event) => {
   const request = event.request;
+  if (request.method !== 'GET') return;
+
   const url = new URL(request.url);
-  const isHttpGet = request.method === 'GET';
-  const isSameOrigin = url.origin === self.location.origin;
-  const isNavigationRequest = request.mode === 'navigate';
-  const isSafeStaticPath = isSameOrigin && (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/offline.html' || url.pathname === '/styles.css' || url.pathname === '/app.js' || url.pathname === '/manifest.webmanifest' || url.pathname.startsWith('/icons/'));
-  const isApiRequest = isSameOrigin && url.pathname.startsWith('/api/');
+  if (url.origin !== self.location.origin) return;
 
-  if (!isHttpGet || !isSameOrigin) {
+  if (isPrivateOrDynamic(url)) {
+    event.respondWith(fetch(request, { cache: 'no-store' }));
     return;
   }
 
-  if (isApiRequest || shouldBypassCache(url)) {
-    event.respondWith(fetch(request).then((response) => {
-      if (!response || response.type !== 'basic' || response.status !== 200) {
-        return response;
-      }
-      return response;
-    }));
+  if (isCodeOrDocument(request, url)) {
+    event.respondWith(networkFirst(request, request.mode === 'navigate' ? '/offline.html' : null));
     return;
   }
 
-  if (isNavigationRequest) {
-    event.respondWith(
-      fetch(request).catch(() => caches.match('/offline.html'))
-    );
+  if (
+    url.pathname.endsWith('.css') ||
+    url.pathname.endsWith('.png') ||
+    url.pathname.endsWith('.jpg') ||
+    url.pathname.endsWith('.jpeg') ||
+    url.pathname.endsWith('.svg') ||
+    url.pathname.endsWith('.webp') ||
+    url.pathname.endsWith('.ico')
+  ) {
+    event.respondWith(staleWhileRevalidate(request));
     return;
   }
 
-  if (isSafeStaticPath) {
-    event.respondWith(
-      caches.match(request, { ignoreSearch: true }).then((cached) => cached || fetch(request).then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-        return response;
-      }))
-    );
-    return;
-  }
-
-  event.respondWith(fetch(request));
+  event.respondWith(networkFirst(request));
 });

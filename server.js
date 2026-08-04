@@ -23,8 +23,6 @@ const PRICE_HISTORY_FILE = path.join(DATA_DIR, 'price-history.json');
 const PRICE_ALERTS_FILE = path.join(DATA_DIR, 'price-alerts.json');
 const NOTIFICATIONS_FILE = path.join(DATA_DIR, 'notifications.json');
 const PROFILES_FILE = path.join(DATA_DIR, 'profiles.json');
-const EMAIL_VERIFICATION_TTL_MS = 1000 * 60 * 15;
-const EMAIL_VERIFICATION_RESEND_MS = 1000 * 60;
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -365,98 +363,12 @@ function writeJson(filePath, value) {
 }
 
 
-function createVerificationCode() {
-  return String(crypto.randomInt(100000, 1000000));
+function isEmailVerified() {
+  // Email verification is temporarily disabled. All authenticated accounts are unlocked.
+  return true;
 }
 
-function hashVerificationCode(email, code) {
-  return crypto.createHash('sha256').update(`${String(email).toLowerCase()}:${String(code)}`).digest('hex');
-}
-
-function postJson(urlString, headers, payload) {
-  return new Promise((resolve, reject) => {
-    const target = new URL(urlString);
-    const body = JSON.stringify(payload);
-    const request = https.request({
-      method: 'POST',
-      hostname: target.hostname,
-      port: target.port || 443,
-      path: `${target.pathname}${target.search}`,
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
-        ...headers
-      },
-      timeout: 15000
-    }, (response) => {
-      let responseBody = '';
-      response.setEncoding('utf8');
-      response.on('data', (chunk) => { responseBody += chunk; });
-      response.on('end', () => {
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          resolve(responseBody ? JSON.parse(responseBody) : {});
-          return;
-        }
-        reject(new Error(`Email provider returned ${response.statusCode}.`));
-      });
-    });
-    request.on('timeout', () => request.destroy(new Error('Email provider timed out.')));
-    request.on('error', reject);
-    request.write(body);
-    request.end();
-  });
-}
-
-async function sendVerificationEmail(email, code) {
-  const apiKey = String(process.env.RESEND_API_KEY || '').trim();
-  const from = String(process.env.EMAIL_FROM || '').trim();
-  if (!apiKey || !from) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('Email delivery is not configured. Add RESEND_API_KEY and EMAIL_FROM.');
-    }
-    console.info(`[development] Project Sora verification code for ${redactSensitiveString(email)}: ${code}`);
-    return { delivered: false, developmentCode: code };
-  }
-  await postJson('https://api.resend.com/emails', { Authorization: `Bearer ${apiKey}` }, {
-    from,
-    to: [email],
-    subject: 'Verify your Project Sora email',
-    text: `Your Project Sora verification code is ${code}. It expires in 15 minutes.`,
-    html: `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto"><h2>Verify your Project Sora account</h2><p>Enter this code to unlock your profile:</p><p style="font-size:32px;font-weight:700;letter-spacing:8px">${code}</p><p>This code expires in 15 minutes. If you did not create this account, you can ignore this email.</p></div>`
-  });
-  return { delivered: true };
-}
-
-async function issueVerificationCode(users, email) {
-  const user = users[email];
-  if (!user) throw new Error('Account not found.');
-  const now = Date.now();
-  if (Number(user.verificationLastSentAt || 0) + EMAIL_VERIFICATION_RESEND_MS > now) {
-    const waitSeconds = Math.ceil((Number(user.verificationLastSentAt || 0) + EMAIL_VERIFICATION_RESEND_MS - now) / 1000);
-    const error = new Error(`Please wait ${waitSeconds} seconds before requesting another code.`);
-    error.statusCode = 429;
-    throw error;
-  }
-  const code = createVerificationCode();
-  user.verificationCodeHash = hashVerificationCode(email, code);
-  user.verificationExpiresAt = now + EMAIL_VERIFICATION_TTL_MS;
-  user.verificationLastSentAt = now;
-  writeJson(USERS_FILE, users);
-  const delivery = await sendVerificationEmail(email, code);
-  return delivery;
-}
-
-function isEmailVerified(userRecord) {
-  return Boolean(userRecord && String(userRecord.emailVerifiedAt || '').trim());
-}
-
-function ensureEmailVerified(username, res) {
-  const users = sanitizeUserStore(readJson(USERS_FILE, {}));
-  const user = users[username];
-  if (!isEmailVerified(user)) {
-    sendJson(res, 403, { error: 'Verify your email to open and customize your profile.', verificationRequired: true }, res.__requestId);
-    return false;
-  }
+function ensureEmailVerified() {
   return true;
 }
 
@@ -1698,6 +1610,20 @@ function serveStaticFile(req, res) {
 
     const ext = path.extname(filePath).toLowerCase();
     applySecurityHeaders(res, MIME_TYPES[ext] || 'application/octet-stream');
+
+    if (safePath === 'sw.js') {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.setHeader('Service-Worker-Allowed', '/');
+    } else if (['.html', '.js', '.mjs', '.json', '.webmanifest'].includes(ext)) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    } else if (['.png', '.jpg', '.jpeg', '.svg', '.webp', '.ico'].includes(ext)) {
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+    } else {
+      res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
+    }
+
     res.writeHead(200);
     res.end(content);
     logRequest(req, res, 200, Date.now() - (res.__startedAt || Date.now()), res.__requestId || getRequestId(req));
@@ -2320,7 +2246,7 @@ function createServer() {
         publicId: createPublicUserId(),
         publicHandle: createPublicHandle(email),
         privacySettings: sanitizePrivacySettings(),
-        emailVerifiedAt: '',
+        emailVerifiedAt: new Date().toISOString(),
         verificationCodeHash: '',
         verificationExpiresAt: 0,
         verificationLastSentAt: 0
@@ -2333,9 +2259,8 @@ function createServer() {
         writeJson(LIBRARIES_FILE, libraries);
       }
 
-      const delivery = await issueVerificationCode(users, email);
       const token = createSession(email);
-      return respond(201, { token, user: email, emailVerified: false, verificationRequired: true, ...(delivery.developmentCode ? { developmentCode: delivery.developmentCode } : {}) });
+      return respond(201, { token, user: email, emailVerified: true, verificationRequired: false });
     } catch (error) {
       return handleServerError(req, res, error, requestId);
     }
@@ -2365,62 +2290,31 @@ function createServer() {
         return respond(401, { error: 'Invalid credentials' });
       }
 
+      if (!isEmailVerified(userRecord)) {
+        userRecord.emailVerifiedAt = new Date().toISOString();
+        userRecord.verificationCodeHash = '';
+        userRecord.verificationExpiresAt = 0;
+        users[email] = userRecord;
+        writeJson(USERS_FILE, users);
+      }
       const token = createSession(email);
-      return respond(200, { token, user: email, emailVerified: isEmailVerified(userRecord), verificationRequired: !isEmailVerified(userRecord) });
+      return respond(200, { token, user: email, emailVerified: true, verificationRequired: false });
     } catch (error) {
       return handleServerError(req, res, error, requestId);
     }
   }
 
 
-  if (req.method === 'POST' && url.pathname === '/api/auth/resend-verification') {
+  if (req.method === 'POST' && (url.pathname === '/api/auth/resend-verification' || url.pathname === '/api/auth/verify-email')) {
     const username = ensureAuthenticated(req, res);
     if (!username) return;
-    const users = sanitizeUserStore(readJson(USERS_FILE, {}));
-    if (isEmailVerified(users[username])) return respond(200, { ok: true, emailVerified: true });
-    try {
-      const delivery = await issueVerificationCode(users, username);
-      return respond(200, { ok: true, verificationRequired: true, ...(delivery.developmentCode ? { developmentCode: delivery.developmentCode } : {}) });
-    } catch (error) {
-      return respond(error.statusCode || 503, { error: error.message || 'Unable to send verification code.' });
-    }
-  }
-
-  if (req.method === 'POST' && url.pathname === '/api/auth/verify-email') {
-    const username = ensureAuthenticated(req, res);
-    if (!username) return;
-    try {
-      const body = await parseBody(req);
-      const code = String(body.code || '').replace(/\D/g, '').slice(0, 6);
-      if (code.length !== 6) return respond(400, { error: 'Enter the six-digit verification code.' });
-      const users = sanitizeUserStore(readJson(USERS_FILE, {}));
-      const user = users[username];
-      if (!user) return respond(404, { error: 'Account not found.' });
-      if (isEmailVerified(user)) return respond(200, { ok: true, emailVerified: true });
-      if (!user.verificationCodeHash || Number(user.verificationExpiresAt || 0) < Date.now()) {
-        return respond(400, { error: 'This verification code has expired. Request a new code.' });
-      }
-      const expected = Buffer.from(user.verificationCodeHash, 'hex');
-      const actual = Buffer.from(hashVerificationCode(username, code), 'hex');
-      if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
-        return respond(400, { error: 'The verification code is incorrect.' });
-      }
-      user.emailVerifiedAt = new Date().toISOString();
-      user.verificationCodeHash = '';
-      user.verificationExpiresAt = 0;
-      users[username] = user;
-      writeJson(USERS_FILE, users);
-      return respond(200, { ok: true, emailVerified: true });
-    } catch (error) {
-      return handleServerError(req, res, error, requestId);
-    }
+    return respond(200, { ok: true, emailVerified: true, verificationRequired: false });
   }
 
   if (req.method === 'GET' && url.pathname === '/api/auth/status') {
     const username = ensureAuthenticated(req, res);
     if (!username) return;
-    const users = sanitizeUserStore(readJson(USERS_FILE, {}));
-    return respond(200, { user: username, emailVerified: isEmailVerified(users[username]) });
+    return respond(200, { user: username, emailVerified: true, verificationRequired: false });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/logout') {

@@ -71,13 +71,6 @@
                   <button id="authSubmitButton" type="button">Log in</button>
                   <p id="authStatus" class="section-caption" role="status" aria-live="polite"></p>
                 </div>
-                <div id="emailVerificationPanel" class="email-verification-panel hidden">
-                  <h3>Verify your email</h3>
-                  <p>Enter the six-digit code sent to your email to unlock your profile.</p>
-                  <input id="emailVerificationCode" type="text" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="000000" aria-label="Six-digit email verification code" />
-                  <div class="actions-row"><button id="verifyEmailButton" type="button">Verify email</button><button id="resendVerificationButton" type="button" class="ghost">Resend code</button></div>
-                  <p id="verificationStatus" class="section-caption" role="status" aria-live="polite"></p>
-                </div>
               </div>
 
               <div class="field-group">
@@ -90,8 +83,7 @@
               <div class="summary-grid" id="summaryGrid"></div>
               <div id="accountProfileCard" class="account-profile-card hidden">
                 <div id="accountAvatar" class="account-profile-avatar">S</div>
-                <div class="account-profile-copy"><strong id="accountDisplayName">Project Sora User</strong><span id="accountHandle">Profile locked</span></div>
-                <span id="accountVerificationBadge" class="verification-badge">Unverified</span>
+                <div class="account-profile-copy"><strong id="accountDisplayName">Project Sora User</strong><span id="accountHandle">@project-sora-user</span></div>
                 <button id="compactViewProfileButton" type="button" class="ghost">View profile</button>
               </div>
               <div class="profile-hub">
@@ -151,7 +143,7 @@
                     <p class="section-caption">Choose up to five games from the Project Sora catalog.</p>
                   </div>
                   <button id="saveProfileButton" type="button">Save profile</button>
-                  <div id="profileEditorStatus" class="beta-download-status" role="status" aria-live="polite">Verify your email to unlock profile customization.</div>
+                  <div id="profileEditorStatus" class="beta-download-status" role="status" aria-live="polite">Profile customization is ready.</div>
                 </div></details>
                 <details class="profile-menu-section"><summary>Privacy controls</summary><div class="field-group privacy-panel">
                   <div class="privacy-panel__header">

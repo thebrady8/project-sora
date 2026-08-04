@@ -69,11 +69,6 @@ const authEmailInput = document.getElementById('authEmail');
 const authPasswordInput = document.getElementById('authPassword');
 const authHeading = document.getElementById('authHeading');
 const authStatus = document.getElementById('authStatus');
-const emailVerificationPanel = document.getElementById('emailVerificationPanel');
-const emailVerificationCodeInput = document.getElementById('emailVerificationCode');
-const verifyEmailButton = document.getElementById('verifyEmailButton');
-const resendVerificationButton = document.getElementById('resendVerificationButton');
-const verificationStatus = document.getElementById('verificationStatus');
 const logoutButton = document.getElementById('logoutButton');
 const menuToggle = document.getElementById('menuToggle');
 const releasePrevButton = document.getElementById('releasePrevButton');
@@ -83,7 +78,6 @@ const accountProfileCard = document.getElementById('accountProfileCard');
 const accountAvatar = document.getElementById('accountAvatar');
 const accountDisplayName = document.getElementById('accountDisplayName');
 const accountHandle = document.getElementById('accountHandle');
-const accountVerificationBadge = document.getElementById('accountVerificationBadge');
 const compactViewProfileButton = document.getElementById('compactViewProfileButton');
 const rememberMeCheckbox = document.getElementById('rememberMe');
 const rememberMeLoginCheckbox = document.getElementById('rememberMeLogin');
@@ -97,8 +91,43 @@ function registerServiceWorker() {
     return;
   }
 
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  let reloadingForServiceWorker = false;
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloadingForServiceWorker) return;
+    reloadingForServiceWorker = true;
+
+    const reloadKey = 'project-sora-sw-reload';
+    if (sessionStorage.getItem(reloadKey) !== '1') {
+      sessionStorage.setItem(reloadKey, '1');
+      window.location.reload();
+    }
+  });
+
+  window.addEventListener('load', async () => {
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js', {
+        updateViaCache: 'none'
+      });
+
+      sessionStorage.removeItem('project-sora-sw-reload');
+      await registration.update();
+
+      registration.addEventListener('updatefound', () => {
+        const worker = registration.installing;
+        if (!worker) return;
+
+        worker.addEventListener('statechange', () => {
+          if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+            worker.postMessage({ type: 'SKIP_WAITING' });
+          }
+        });
+      });
+
+      window.setInterval(() => registration.update().catch(() => {}), 30 * 60 * 1000);
+    } catch (error) {
+      console.warn('Service worker registration failed', error);
+    }
   });
 }
 
@@ -964,12 +993,12 @@ async function restoreRememberedSession() {
 
   try {
     const authStatusResponse = await apiRequest('/api/auth/status');
-    setEmailVerificationState(Boolean(authStatusResponse.emailVerified));
+    setEmailVerificationState(true);
     updateCompactAccountCard();
     await Promise.all([loadLibraryFromServer(), loadWishlistFromServer(), loadQueueFromServer()]);
     await loadFriendState();
     await loadPrivacySettings();
-    if (emailVerified) await loadProfileSettings();
+    await loadProfileSettings();
     await loadNotifications();
     renderLibrary();
     updateSummary();
@@ -4100,20 +4129,14 @@ function setAuthMode(mode) {
   if (authStatus) authStatus.textContent = '';
 }
 
-function setEmailVerificationState(verified, message = '') {
-  emailVerified = Boolean(verified);
-  emailVerificationPanel?.classList.toggle('hidden', emailVerified || !currentUser);
+function setEmailVerificationState(_verified = true, _message = '') {
+  emailVerified = true;
   accountProfileCard?.classList.toggle('hidden', !currentUser);
-  if (accountVerificationBadge) {
-    accountVerificationBadge.textContent = emailVerified ? 'Verified' : 'Unverified';
-    accountVerificationBadge.dataset.verified = String(emailVerified);
-  }
   document.querySelectorAll('.profile-editor-panel input, .profile-editor-panel textarea, .profile-editor-panel button, .profile-editor-panel select').forEach((element) => {
-    element.disabled = !emailVerified;
+    element.disabled = false;
   });
-  if (compactViewProfileButton) compactViewProfileButton.disabled = !emailVerified;
-  if (viewOwnProfileButton) viewOwnProfileButton.disabled = !emailVerified;
-  if (message && verificationStatus) verificationStatus.textContent = message;
+  if (compactViewProfileButton) compactViewProfileButton.disabled = false;
+  if (viewOwnProfileButton) viewOwnProfileButton.disabled = false;
 }
 
 function updateCompactAccountCard() {
@@ -4121,7 +4144,7 @@ function updateCompactAccountCard() {
   const profile = currentProfileSettings || {};
   const display = profile.displayName || currentUser.split('@')[0] || 'Project Sora User';
   if (accountDisplayName) accountDisplayName.textContent = display;
-  if (accountHandle) accountHandle.textContent = emailVerified ? `@${createPublicHandle(currentUser)}` : 'Verify email to unlock profile';
+  if (accountHandle) accountHandle.textContent = `@${createPublicHandle(currentUser)}`;
   if (accountAvatar) accountAvatar.textContent = display.charAt(0).toUpperCase();
 }
 
@@ -4132,12 +4155,12 @@ async function applyAuthenticatedSession(data, shouldRemember) {
   usernameInput.value = currentUser;
   if (shouldRemember) { setRememberPreference(true); persistSession(currentUser, authToken, true); }
   else { setRememberPreference(false); clearStoredAuth(); }
-  setEmailVerificationState(Boolean(data.emailVerified), data.verificationRequired ? 'Check your email for a six-digit verification code.' : 'Email verified.');
+  setEmailVerificationState(true);
   updateCompactAccountCard();
   await Promise.all([loadLibraryFromServer(), loadWishlistFromServer(), loadQueueFromServer()]);
   await loadFriendState();
   await loadPrivacySettings();
-  if (emailVerified) await loadProfileSettings();
+  await loadProfileSettings();
   await loadNotifications();
   renderLibrary(); renderWishlistView(); renderQueueView(); updateProfileHub();
 }
@@ -4155,8 +4178,7 @@ authSubmitButton?.addEventListener('click', async () => {
     authSubmitButton.disabled = true;
     const data = await apiRequest(authMode === 'register' ? '/api/register' : '/api/login', { method: 'POST', body: JSON.stringify({ email, password }) });
     await applyAuthenticatedSession(data, shouldRemember);
-    if (data.developmentCode && verificationStatus) verificationStatus.textContent = `Development verification code: ${data.developmentCode}`;
-    if (authStatus) authStatus.textContent = authMode === 'register' ? 'Account created. Verify your email to unlock your profile.' : 'Logged in.';
+    if (authStatus) authStatus.textContent = authMode === 'register' ? 'Account created and logged in.' : 'Logged in.';
   } catch (error) {
     const message = error?.message || 'Account access failed.';
     if (authStatus) authStatus.textContent = message;
@@ -4164,23 +4186,6 @@ authSubmitButton?.addEventListener('click', async () => {
   } finally { authSubmitButton.disabled = false; }
 });
 
-verifyEmailButton?.addEventListener('click', async () => {
-  try {
-    const code = String(emailVerificationCodeInput?.value || '').replace(/\D/g, '').slice(0, 6);
-    const response = await apiRequest('/api/auth/verify-email', { method: 'POST', body: JSON.stringify({ code }) });
-    setEmailVerificationState(Boolean(response.emailVerified), 'Email verified. Your profile is now unlocked.');
-    await loadProfileSettings(); updateCompactAccountCard();
-  } catch (error) { if (verificationStatus) verificationStatus.textContent = error?.message || 'Verification failed.'; }
-});
-
-resendVerificationButton?.addEventListener('click', async () => {
-  try {
-    resendVerificationButton.disabled = true;
-    const response = await apiRequest('/api/auth/resend-verification', { method: 'POST' });
-    if (verificationStatus) verificationStatus.textContent = response.developmentCode ? `Development verification code: ${response.developmentCode}` : 'A new code was sent.';
-  } catch (error) { if (verificationStatus) verificationStatus.textContent = error?.message || 'Unable to resend code.'; }
-  finally { resendVerificationButton.disabled = false; }
-});
 
 compactViewProfileButton?.addEventListener('click', () => viewOwnProfileButton?.click());
 setAuthMode('login');
