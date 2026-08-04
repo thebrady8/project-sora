@@ -311,7 +311,17 @@
                 <p class="section-caption">A rotating spotlight of upcoming launches and collector-favorite releases.</p>
               </div>
               <div class="release-toolbar">
-                <span class="release-badge">Live release calendar</span>
+                <label class="release-calendar-filter">
+                  <span class="sr-only">Filter upcoming releases by platform</span>
+                  <select id="releasePlatformFilter" aria-label="Filter upcoming releases by platform">
+                    <option value="All">All platforms</option>
+                    <option value="Steam">Steam / PC</option>
+                    <option value="Xbox">Xbox</option>
+                    <option value="PlayStation">PlayStation</option>
+                    <option value="Nintendo">Nintendo</option>
+                  </select>
+                </label>
+                <button id="releaseCalendarButton" type="button" class="release-badge release-badge--button">Upcoming game calendar</button>
                 <button id="releasePrevButton" type="button" class="ghost" aria-label="View previous release">←</button>
                 <button id="releaseNextButton" type="button" class="ghost" aria-label="View next release">→</button>
               </div>
@@ -387,6 +397,15 @@
                 <p class="section-caption">Keyboard: ← pass, → like, ↑ strong interest, Enter details, Backspace undo.</p>
               </aside>
             </div>
+          </section>
+
+
+          <section id="releaseDetailPage" class="card panel wide-panel hidden release-detail-page" aria-labelledby="releaseDetailHeading">
+            <div class="section-title-row">
+              <button id="backFromReleaseButton" type="button" class="ghost">← Back to upcoming releases</button>
+              <span id="releaseDataUpdatedAt" class="section-caption"></span>
+            </div>
+            <div id="releaseDetailContent" class="release-detail-content" aria-live="polite"></div>
           </section>
 
           <section id="statisticsPage" class="card panel wide-panel hidden" aria-labelledby="statisticsHeading">

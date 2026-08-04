@@ -20,6 +20,8 @@ const ACTIVITIES_FILE = path.join(DATA_DIR, 'activities.json');
 const FRIENDS_FILE = path.join(DATA_DIR, 'friends.json');
 const CATALOG_FILE = path.join(DATA_DIR, 'catalog.json');
 const PRICE_HISTORY_FILE = path.join(DATA_DIR, 'price-history.json');
+const RELEASE_CACHE_FILE = path.join(DATA_DIR, 'release-cache.json');
+const RELEASE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const PRICE_ALERTS_FILE = path.join(DATA_DIR, 'price-alerts.json');
 const NOTIFICATIONS_FILE = path.join(DATA_DIR, 'notifications.json');
 const PROFILES_FILE = path.join(DATA_DIR, 'profiles.json');
@@ -466,6 +468,11 @@ function fetchSteamJson(url) {
     const req = https.get(url, {
       headers: { 'User-Agent': 'Mozilla/5.0' }
     }, (res) => {
+      if ((res.statusCode || 500) >= 400) {
+        res.resume();
+        reject(new Error(`Request failed with status ${res.statusCode}`));
+        return;
+      }
       let data = '';
       res.on('data', (chunk) => {
         data += chunk;
@@ -488,6 +495,11 @@ function fetchText(url) {
     const req = https.get(url, {
       headers: { 'User-Agent': 'Mozilla/5.0' }
     }, (res) => {
+      if ((res.statusCode || 500) >= 400) {
+        res.resume();
+        reject(new Error(`Request failed with status ${res.statusCode}`));
+        return;
+      }
       let data = '';
       res.on('data', (chunk) => {
         data += chunk;
@@ -537,8 +549,10 @@ function parseRssItems(xml, platform) {
       || '';
 
     return {
+      id: `${platform.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`,
       title,
       link,
+      source: platform,
       release,
       genre: 'Game',
       platform,
@@ -566,7 +580,8 @@ async function fetchNintendoReleaseFeed() {
         || 'Upcoming';
       const image = (block.match(/<img[^>]*src="([^"]+)"/i) || [])[1] || '';
       const blurb = stripHtml((block.match(/<p[^>]*>([\s\S]*?)<\/p>/i) || [])[1]) || title;
-      return { title, release, image, blurb, genre: 'Nintendo', platform: 'Nintendo Switch' };
+      const link = (block.match(/<a[^>]*href="([^"]+)"/i) || [])[1] || '';
+      return { id: `nintendo-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`, title, release, image, blurb, link, source: 'Nintendo', genre: 'Nintendo', platform: 'Nintendo Switch' };
     }).filter((item) => item.title && item.title !== 'More');
 
     return articleItems.slice(0, 3);
@@ -607,6 +622,10 @@ function fetchSteamAppDetails(appId) {
       }
 
       return {
+        id: `steam-${appId}`,
+        appId,
+        source: 'Steam',
+        link: `https://store.steampowered.com/app/${appId}/`,
         title: details.name || 'Unknown title',
         image: details.header_image || '',
         release: details.release_date?.date || 'Coming soon',
@@ -691,9 +710,28 @@ async function fetchLiveReleaseFeed() {
     });
   });
 
+  const now = Date.now();
+  const twelveMonths = now + RELEASE_CACHE_TTL_MS * 365;
   return [...merged.values()]
+    .map((item) => ({ ...item, id: item.id || `${String(item.source || item.platform || 'release').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${String(item.title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}` }))
+    .filter((item) => {
+      const time = Number(item.releaseTimestamp);
+      return !Number.isFinite(time) || time === Number.MAX_SAFE_INTEGER || (time >= now - 86400000 && time <= twelveMonths);
+    })
     .sort((a, b) => (a.releaseTimestamp || Number.MAX_SAFE_INTEGER) - (b.releaseTimestamp || Number.MAX_SAFE_INTEGER))
-    .slice(0, 12);
+    .slice(0, 60);
+}
+
+async function getDailyReleaseFeed(forceRefresh = false) {
+  const cached = readJson(RELEASE_CACHE_FILE, {});
+  const cachedAt = Date.parse(cached.updatedAt || '');
+  if (!forceRefresh && Array.isArray(cached.items) && cached.items.length && Number.isFinite(cachedAt) && Date.now() - cachedAt < RELEASE_CACHE_TTL_MS) {
+    return cached;
+  }
+  const items = await fetchLiveReleaseFeed();
+  const payload = { updatedAt: new Date().toISOString(), sources: ['Steam', 'Xbox Wire', 'PlayStation Blog', 'Nintendo News'], items };
+  if (items.length) writeJson(RELEASE_CACHE_FILE, payload);
+  return items.length ? payload : (Array.isArray(cached.items) ? cached : payload);
 }
 
 function sanitizeLibraryPayload(value) {
@@ -1825,8 +1863,8 @@ function createServer() {
 
   if (req.method === 'GET' && url.pathname === '/api/releases') {
     try {
-      const releases = await fetchLiveReleaseFeed();
-      return respond(200, { items: releases });
+      const releases = await getDailyReleaseFeed(url.searchParams.get('refresh') === '1');
+      return respond(200, releases);
     } catch {
       return respond(200, { items: [] });
     }

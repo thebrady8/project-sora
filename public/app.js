@@ -95,6 +95,12 @@ const logoutButton = document.getElementById('logoutButton');
 const menuToggle = document.getElementById('menuToggle');
 const releasePrevButton = document.getElementById('releasePrevButton');
 const releaseNextButton = document.getElementById('releaseNextButton');
+const releasePlatformFilter = document.getElementById('releasePlatformFilter');
+const releaseCalendarButton = document.getElementById('releaseCalendarButton');
+const releaseDetailPage = document.getElementById('releaseDetailPage');
+const releaseDetailContent = document.getElementById('releaseDetailContent');
+const backFromReleaseButton = document.getElementById('backFromReleaseButton');
+const releaseDataUpdatedAt = document.getElementById('releaseDataUpdatedAt');
 const sideMenu = document.getElementById('sideMenu');
 const accountProfileCard = document.getElementById('accountProfileCard');
 const accountAvatar = document.getElementById('accountAvatar');
@@ -361,6 +367,10 @@ let releaseCalendarData = sortReleaseDataChronologically([...PREMIUM_RELEASE_FAL
 let releaseHeroIndex = 0;
 let releaseRotationTimer = null;
 let releaseAutoRotateEnabled = true;
+let releasePlatformSelection = 'All';
+let releaseFeedUpdatedAt = '';
+let currentReleaseDetailId = '';
+const RELEASE_INTEREST_KEY = 'project-sora-release-interests';
 
 function renderLibrarySkeleton() {
   if (!gamesList) {
@@ -654,15 +664,110 @@ function showStatisticsView() {
   window.location.hash = '#statistics';
 }
 
+
+function getReleaseInterests() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(RELEASE_INTEREST_KEY) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveReleaseInterests(value) {
+  localStorage.setItem(RELEASE_INTEREST_KEY, JSON.stringify(value || {}));
+}
+
+function getFilteredReleaseCalendar() {
+  const now = Date.now();
+  const twelveMonths = now + (365 * 24 * 60 * 60 * 1000);
+  return releaseCalendarData.filter((item) => {
+    const platform = String(item.platform || '').toLowerCase();
+    const source = String(item.source || '').toLowerCase();
+    const platformMatch = releasePlatformSelection === 'All'
+      || platform.includes(releasePlatformSelection.toLowerCase())
+      || source.includes(releasePlatformSelection.toLowerCase())
+      || (releasePlatformSelection === 'Steam' && /pc|windows|mac|linux|steam/.test(platform));
+    const releaseTime = Number(item.releaseTimestamp || parseReleaseDate(item.release));
+    const dateMatch = !Number.isFinite(releaseTime) || releaseTime === Number.MAX_SAFE_INTEGER || (releaseTime >= now - 86400000 && releaseTime <= twelveMonths);
+    return platformMatch && dateMatch;
+  });
+}
+
+function releaseSlug(item) {
+  return encodeURIComponent(String(item?.id || item?.title || 'upcoming-release').trim());
+}
+
+function openReleaseDetail(item) {
+  if (!item) return;
+  window.location.hash = `#upcoming/${releaseSlug(item)}`;
+}
+
+function renderReleaseCalendarList() {
+  const items = getFilteredReleaseCalendar();
+  if (!releaseDetailPage || !releaseDetailContent) return;
+  currentReleaseDetailId = 'calendar';
+  mainContent?.classList.add('hidden');
+  detailPage?.classList.add('hidden');
+  statisticsPage?.classList.add('hidden');
+  publicProfilePage?.classList.add('hidden');
+  releaseDetailPage.classList.remove('hidden');
+  releaseDataUpdatedAt.textContent = releaseFeedUpdatedAt ? `Updated ${new Date(releaseFeedUpdatedAt).toLocaleString()}` : 'Updated daily';
+  releaseDetailContent.innerHTML = `
+    <div class="release-calendar-heading"><div><p class="eyebrow">Next 12 months</p><h2 id="releaseDetailHeading">Upcoming game calendar</h2><p class="section-caption">Daily results from public Steam, Xbox, PlayStation, and Nintendo sources. Dates and availability should be confirmed with the linked publisher or store.</p></div></div>
+    <div class="release-calendar-grid">${items.map((item) => `
+      <button type="button" class="release-calendar-entry" data-release-id="${escapeHtml(item.id)}">
+        <img src="${escapeHtml(item.image || GAME_IMAGE_FALLBACK)}" alt="" loading="lazy" />
+        <span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.platform)} · ${escapeHtml(item.release)}</small></span>
+        <span aria-hidden="true">→</span>
+      </button>`).join('') || '<div class="empty-state">No releases match this platform filter right now.</div>'}</div>`;
+}
+
+function renderReleaseDetail(item) {
+  if (!item || !releaseDetailPage || !releaseDetailContent) {
+    showHomeView();
+    return;
+  }
+  currentReleaseDetailId = item.id;
+  mainContent?.classList.add('hidden');
+  detailPage?.classList.add('hidden');
+  statisticsPage?.classList.add('hidden');
+  publicProfilePage?.classList.add('hidden');
+  releaseDetailPage.classList.remove('hidden');
+  const interests = getReleaseInterests();
+  const interested = Boolean(interests[item.id]);
+  const wishlisted = getWishlistItems().some((entry) => entry.gameId === item.id || entry.title === item.title);
+  releaseDataUpdatedAt.textContent = releaseFeedUpdatedAt ? `Calendar updated ${new Date(releaseFeedUpdatedAt).toLocaleString()}` : 'Calendar updated daily';
+  releaseDetailContent.innerHTML = `
+    <article class="release-detail-hero">
+      <img src="${escapeHtml(item.image || GAME_IMAGE_FALLBACK)}" alt="${escapeHtml(item.title)}" />
+      <div>
+        <p class="eyebrow">Releasing within 12 months</p>
+        <h2 id="releaseDetailHeading">${escapeHtml(item.title)}</h2>
+        <div class="release-meta"><span class="release-pill">${escapeHtml(item.genre)}</span><span class="release-pill">${escapeHtml(item.platform)}</span><span class="release-pill">${escapeHtml(item.release)}</span><span class="release-pill">Source: ${escapeHtml(item.source || 'Project Sora')}</span></div>
+        <p>${escapeHtml(decodeHtmlEntities(item.blurb || item.title))}</p>
+        <div class="release-detail-actions">
+          <button type="button" data-release-action="interest" data-release-id="${escapeHtml(item.id)}" class="${interested ? 'is-active' : ''}">${interested ? 'Interested ✓' : 'Mark Interested'}</button>
+          <button type="button" data-release-action="wishlist" data-release-id="${escapeHtml(item.id)}" class="${wishlisted ? 'is-active' : ''}">${wishlisted ? 'Wishlisted ✓' : 'Add to Wishlist'}</button>
+          ${item.link ? `<a class="button-link ghost" href="${escapeHtml(item.link)}" target="_blank" rel="noopener noreferrer">Open official article or store ↗</a>` : ''}
+        </div>
+      </div>
+    </article>`;
+}
+
+function findReleaseById(id) {
+  const decoded = decodeURIComponent(String(id || ''));
+  return releaseCalendarData.find((item) => String(item.id) === decoded || releaseSlug(item) === id || item.title === decoded);
+}
+
 function renderReleaseCalendar() {
   const container = document.getElementById('upcomingReleaseRotator');
   if (!container) {
     return;
   }
 
-  const items = Array.isArray(releaseCalendarData) && releaseCalendarData.length
-    ? releaseCalendarData
-    : sortReleaseDataChronologically([...PREMIUM_RELEASE_FALLBACK]);
+  const filteredItems = getFilteredReleaseCalendar();
+  const items = filteredItems.length ? filteredItems : (releasePlatformSelection === 'All' ? sortReleaseDataChronologically([...PREMIUM_RELEASE_FALLBACK]) : []);
 
   if (!items.length) {
     container.innerHTML = '<div class="empty-state">Release calendar is unavailable right now.</div>';
@@ -675,7 +780,7 @@ function renderReleaseCalendar() {
 
   const heroImage = escapeHtml(hero.image || GAME_IMAGE_FALLBACK);
   const heroTitle = escapeHtml(hero.title || 'Featured release');
-  const heroBlurb = escapeHtml(decodeHtmlEntities(hero.blurb || hero.title || 'Featured release'));
+  const heroBlurb = escapeHtml(hero.blurb ? decodeHtmlEntities(hero.blurb) : (hero.title || 'Featured release'));
   const heroGenre = escapeHtml(hero.genre || 'Game');
   const heroPlatform = escapeHtml(hero.platform || 'PC / Console');
   const heroRelease = escapeHtml(hero.release || 'Upcoming');
@@ -687,7 +792,7 @@ function renderReleaseCalendar() {
     const itemRelease = escapeHtml(item.release || 'Upcoming');
     const itemImage = escapeHtml(item.image || GAME_IMAGE_FALLBACK);
     return `
-      <article class="release-list-card">
+      <button type="button" class="release-list-card" data-release-id="${escapeHtml(item.id)}">
         <div class="release-list-card__image-wrap">
           <img src="${itemImage}" alt="${itemTitle}" loading="lazy" decoding="async" />
         </div>
@@ -702,12 +807,12 @@ function renderReleaseCalendar() {
             <span class="release-pill">${itemRelease}</span>
           </div>
         </div>
-      </article>
+      </button>
     `;
   }).join('');
 
   container.innerHTML = `
-    <div class="release-hero" role="group" aria-roledescription="carousel" aria-label="Upcoming releases carousel" aria-live="polite">
+    <button type="button" class="release-hero" data-release-id="${escapeHtml(hero.id)}" role="group" aria-roledescription="carousel" aria-label="Upcoming releases carousel" aria-live="polite">
       <div class="release-hero__image">
         <img src="${heroImage}" alt="${heroTitle}" loading="eager" decoding="async" fetchpriority="high" />
       </div>
@@ -724,7 +829,7 @@ function renderReleaseCalendar() {
           <span class="release-pill">${heroRelease}</span>
         </div>
       </div>
-    </div>
+    </button>
     <div class="release-list-grid" role="list" aria-label="More upcoming releases">${listMarkup}</div>
   `;
 
@@ -789,26 +894,60 @@ function rotateReleaseCalendar(direction) {
 
 function initializeReleaseCarouselControls() {
   const rotator = document.getElementById('upcomingReleaseRotator');
-  if (!rotator || rotator.dataset.controlsReady === 'true') {
+  const previousButton = document.getElementById('releasePrevButton');
+  const nextButton = document.getElementById('releaseNextButton');
+  if (!rotator) {
+    return;
+  }
+
+  // Bind the two persistent toolbar buttons directly. They live outside the
+  // dynamically rendered carousel, so these listeners survive every render.
+  const bindButton = (button, direction) => {
+    if (!button || button.dataset.releaseControlBound === 'true') {
+      return;
+    }
+
+    button.dataset.releaseControlBound = 'true';
+    const activate = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      rotateReleaseCalendar(direction);
+    };
+
+    button.addEventListener('click', activate);
+    button.addEventListener('pointerup', (event) => {
+      // A normal mouse pointer already produces a click; handling touch/pen
+      // here makes taps reliable in browsers that suppress a synthetic click.
+      if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+        activate(event);
+      }
+    });
+  };
+
+  bindButton(previousButton, -1);
+  bindButton(nextButton, 1);
+
+  // Delegated fallback keeps desktop clicks working if the toolbar is replaced
+  // by a future render or browser accessibility layer.
+  if (document.documentElement.dataset.releaseDelegationBound !== 'true') {
+    document.documentElement.dataset.releaseDelegationBound = 'true';
+    document.addEventListener('click', (event) => {
+      if (event.target.closest('#releasePrevButton')) {
+        event.preventDefault();
+        rotateReleaseCalendar(-1);
+      } else if (event.target.closest('#releaseNextButton')) {
+        event.preventDefault();
+        rotateReleaseCalendar(1);
+      }
+    });
+  }
+
+  if (rotator.dataset.controlsReady === 'true') {
     return;
   }
 
   rotator.dataset.controlsReady = 'true';
   let pointerStart = null;
-
-  // Event delegation keeps the desktop controls working even after dynamic re-renders.
-  document.addEventListener('click', (event) => {
-    const previous = event.target.closest('#releasePrevButton');
-    const next = event.target.closest('#releaseNextButton');
-
-    if (previous) {
-      event.preventDefault();
-      rotateReleaseCalendar(-1);
-    } else if (next) {
-      event.preventDefault();
-      rotateReleaseCalendar(1);
-    }
-  });
 
   rotator.addEventListener('pointerdown', (event) => {
     if (event.pointerType === 'mouse' && event.button !== 0) {
@@ -868,7 +1007,8 @@ async function refreshReleaseCalendar() {
   try {
     const data = await apiRequest('/api/releases');
     const liveItems = Array.isArray(data?.items) ? data.items : [];
-    releaseCalendarData = mergeReleaseCalendar(liveItems, PREMIUM_RELEASE_FALLBACK);
+    releaseFeedUpdatedAt = String(data?.updatedAt || '');
+    releaseCalendarData = mergeReleaseCalendar(liveItems, PREMIUM_RELEASE_FALLBACK).map(normalizeReleaseEntry);
   } catch {
     releaseCalendarData = sortReleaseDataChronologically([...PREMIUM_RELEASE_FALLBACK]);
   }
@@ -3360,6 +3500,9 @@ function showHomeView() {
   if (publicProfilePage) {
     publicProfilePage.classList.add('hidden');
   }
+  if (releaseDetailPage) {
+    releaseDetailPage.classList.add('hidden');
+  }
   window.location.hash = '';
 }
 
@@ -3822,6 +3965,20 @@ function resolveHashRoute() {
     }
   }
 
+  if (hash === '#upcoming/calendar') {
+    renderReleaseCalendarList();
+    return;
+  }
+
+  if (hash.startsWith('#upcoming/')) {
+    const releaseId = hash.slice('#upcoming/'.length);
+    const release = findReleaseById(releaseId);
+    if (release) {
+      renderReleaseDetail(release);
+      return;
+    }
+  }
+
   if (hash === '#statistics') {
     showStatisticsView();
     return;
@@ -3829,6 +3986,42 @@ function resolveHashRoute() {
 
   showHomeView();
 }
+
+
+releasePlatformFilter?.addEventListener('change', () => {
+  releasePlatformSelection = releasePlatformFilter.value || 'All';
+  releaseHeroIndex = 0;
+  if (window.location.hash === '#upcoming/calendar') renderReleaseCalendarList();
+  else renderReleaseCalendar();
+});
+releaseCalendarButton?.addEventListener('click', () => { window.location.hash = '#upcoming/calendar'; });
+backFromReleaseButton?.addEventListener('click', () => showHomeView());
+
+document.addEventListener('click', async (event) => {
+  const releaseCard = event.target.closest('[data-release-id]');
+  if (releaseCard && !event.target.closest('[data-release-action]')) {
+    const item = findReleaseById(releaseCard.getAttribute('data-release-id'));
+    if (item) openReleaseDetail(item);
+    return;
+  }
+  const actionButton = event.target.closest('[data-release-action]');
+  if (!actionButton) return;
+  const item = findReleaseById(actionButton.getAttribute('data-release-id'));
+  if (!item) return;
+  const action = actionButton.getAttribute('data-release-action');
+  if (action === 'interest') {
+    const interests = getReleaseInterests();
+    if (interests[item.id]) delete interests[item.id];
+    else interests[item.id] = { id: item.id, title: item.title, markedAt: new Date().toISOString() };
+    saveReleaseInterests(interests);
+    renderReleaseDetail(item);
+  } else if (action === 'wishlist') {
+    const existing = getWishlistItems().find((entry) => entry.gameId === item.id || entry.title === item.title);
+    if (existing) await removeGameFromWishlist(existing.gameId);
+    else await addGameToWishlist({ id: item.id, title: item.title, platform: item.platform, image: item.image, price: 0 });
+    renderReleaseDetail(item);
+  }
+});
 
 registerServiceWorker();
 initInstallButton();

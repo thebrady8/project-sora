@@ -1650,3 +1650,97 @@ button:hover {
     height: 180px;
   }
 }
+
+/* Release carousel controls must remain above decorative/content layers. */
+.release-toolbar {
+  position: relative;
+  z-index: 20;
+  pointer-events: auto;
+}
+
+.release-toolbar button {
+  position: relative;
+  z-index: 21;
+  pointer-events: auto !important;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+
+/* Upcoming game calendar and release detail pages */
+.release-calendar-filter select { min-height: 44px; border-radius: 999px; }
+.release-badge--button { border: 1px solid rgba(56,189,248,.35); cursor: pointer; min-height: 44px; }
+.release-hero, .release-list-card { width: 100%; color: inherit; text-align: left; cursor: pointer; border: 1px solid rgba(148,163,184,.14); }
+.release-hero:hover, .release-list-card:hover, .release-hero:focus-visible, .release-list-card:focus-visible { border-color: rgba(45,212,191,.75); transform: translateY(-2px); }
+.release-detail-page { min-height: 520px; }
+.release-detail-content { display: grid; gap: 20px; }
+.release-detail-hero { display: grid; grid-template-columns: minmax(240px, 38%) 1fr; gap: 28px; align-items: start; }
+.release-detail-hero > img { width: 100%; min-height: 300px; max-height: 480px; object-fit: cover; border-radius: 18px; background: rgba(15,23,42,.8); }
+.release-detail-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
+.release-detail-actions .is-active { box-shadow: 0 0 0 2px rgba(45,212,191,.5); }
+.button-link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 16px; border-radius: 12px; text-decoration: none; }
+.release-calendar-heading { margin-bottom: 8px; }
+.release-calendar-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap: 12px; }
+.release-calendar-entry { display: grid; grid-template-columns: 88px 1fr auto; align-items: center; gap: 14px; width: 100%; padding: 12px; text-align: left; color: inherit; background: rgba(15,23,42,.7); border: 1px solid rgba(148,163,184,.15); border-radius: 14px; }
+.release-calendar-entry:hover, .release-calendar-entry:focus-visible { border-color: rgba(56,189,248,.7); }
+.release-calendar-entry img { width: 88px; height: 64px; object-fit: cover; border-radius: 9px; }
+.release-calendar-entry span { display: grid; gap: 5px; }
+.release-calendar-entry small { color: var(--muted, #94a3b8); }
+@media (max-width: 720px) { .release-detail-hero { grid-template-columns: 1fr; } .release-detail-hero > img { max-height: 320px; } .release-toolbar { flex-wrap: wrap; } .release-calendar-filter { width: 100%; } .release-calendar-filter select { width: 100%; } }
+
+.upcoming-release-rotator {
+  touch-action: pan-y pinch-zoom;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .game-finder-card,
+  .game-finder-reaction,
+  .release-hero,
+  .release-list-card,
+  .release-calendar-entry {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.skeleton-card {
+  position: relative;
+  min-height: 120px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.skeleton-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.1),
+    transparent
+  );
+  animation: skeleton-shimmer 1.4s infinite;
+}
+
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-card::after {
+    animation: none;
+  }
+}
