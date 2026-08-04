@@ -97,3 +97,16 @@ Accounts are created without an email verification-code requirement in this beta
 ## Verified release discovery
 
 The Upcoming Releases queue now accepts only finite hard launch dates within the next 12 months, sorts them soonest-first, refreshes its public Steam Store feed daily, and excludes undated news posts. The Latest Release Coverage panel refreshes from a rolling seven-day window of IGN, GameSpot, Eurogamer, Polygon, and PC Gamer coverage. Console store APIs are intentionally not labeled as connected until official public access is available.
+
+
+## Data integrations and provider policy
+
+Project Sora distinguishes between official partner APIs, public structured endpoints, public RSS feeds, and locally imported datasets. The app does not claim that static catalog values are live.
+
+- `GET /api/integrations/status` reports provider type, availability, freshness, cached item counts, and future partner-integration placeholders.
+- Nintendo HTML scraping is disabled.
+- Steam release data is labeled as public Steam Store data rather than a guaranteed Steam Web API integration.
+- Xbox, PlayStation, and Nintendo partner integrations remain disabled until approved credentials are available.
+- Authenticated API responses are same-origin by default. Extra trusted origins can be supplied with `ALLOWED_CORS_ORIGINS`.
+- Camera access is permitted only for the same origin so the mobile barcode scanner can work over HTTPS.
+- External requests use configurable timeouts, limited retries, and cached fallback data.

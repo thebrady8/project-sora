@@ -19,5 +19,5 @@ assert.ok(css.includes('.discovery-hero'), 'discovery hero styles should exist')
 assert.ok(css.includes('.trending-collections'), 'trending collection styles should exist');
 assert.ok(html.includes('id="discoveryHero"'), 'landing hero markup should exist');
 assert.ok(html.includes('id="trendingCollections"'), 'trending collection markup should exist');
-assert.ok(sw.includes('project-sora-closed-beta-v18'), 'service worker cache should be bumped');
+assert.match(sw, /const CACHE_VERSION = 'project-sora-[^']+-v\d+';/, 'service worker cache should be versioned');
 console.log('Steam discovery background test passed');

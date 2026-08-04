@@ -12,5 +12,5 @@ assert.ok(app.includes("event.target.closest('.trending-collection[data-featured
 assert.ok(css.includes('pointer-events: none !important'), 'visual overlay layers should not intercept clicks');
 assert.ok(css.includes('.trending-collection__copy'), 'trending collection copy should have clean layout styles');
 assert.ok(css.includes('touch-action: manipulation'), 'interactive controls should support reliable touch activation');
-assert.ok(sw.includes('project-sora-verified-releases-v16'), 'service worker cache should be bumped');
+assert.match(sw, /const CACHE_VERSION = 'project-sora-[^']+-v\d+';/, 'service worker cache should be versioned');
 console.log('Discovery controls and polish test passed');

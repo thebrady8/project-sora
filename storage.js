@@ -1,7 +1,13 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const Database = require('better-sqlite3');
+let Database = null;
+try { Database = require('better-sqlite3'); } catch (error) {
+  if (String(process.env.GAMEVAULT_PERSISTENCE || 'SQLITE').toUpperCase() !== 'JSON') {
+    error.message = `SQLite persistence requires better-sqlite3. ${error.message}`;
+    throw error;
+  }
+}
 
 const ROOT = __dirname;
 const DATA_DIR = process.env.GAMEVAULT_DATA_DIR ? path.resolve(process.env.GAMEVAULT_DATA_DIR) : path.join(ROOT, 'data');
@@ -54,7 +60,7 @@ function createDataBackup(options = {}) {
   const backupDir = path.join(DATA_DIR, `backup-${timestamp}`);
   fs.mkdirSync(backupDir, { recursive: true });
 
-  const filesToCopy = ['users.json', 'libraries.json', 'wishlists.json', 'queues.json', 'activities.json', 'friends.json', 'catalog.json', 'price-history.json', 'price-alerts.json', 'notifications.json', 'profiles.json'];
+  const filesToCopy = ['users.json', 'libraries.json', 'wishlists.json', 'queues.json', 'activities.json', 'friends.json', 'catalog.json', 'price-history.json', 'price-alerts.json', 'notifications.json', 'profiles.json', 'game-finder.json', 'release-interests.json', 'release-reminders.json', 'feedback.json', 'client-errors.json'];
   const copiedFiles = [];
   filesToCopy.forEach((fileName) => {
     const sourcePath = path.join(DATA_DIR, fileName);
@@ -132,10 +138,44 @@ function openDatabase() {
   }
 
   ensureDataDirectory();
+  if (!Database) throw new Error('SQLite persistence is unavailable because better-sqlite3 is not installed');
   database = new Database(DB_PATH, { fileMustExist: false });
   database.pragma('foreign_keys = ON');
   database.pragma('journal_mode = WAL');
   return database;
+}
+
+
+const CURRENT_SCHEMA_VERSION = 3;
+function columnExists(db, tableName, columnName) {
+  return db.prepare(`PRAGMA table_info(${tableName})`).all().some((row) => row.name === columnName);
+}
+function runMigrations(db) {
+  db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)`);
+  const applied = new Set(db.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
+  const migrations = [
+    { version: 1, name: 'baseline-schema', apply() {} },
+    { version: 2, name: 'profile-account-fields', apply() {
+      if (!columnExists(db, 'profiles', 'platform_accounts_json')) db.exec(`ALTER TABLE profiles ADD COLUMN platform_accounts_json TEXT NOT NULL DEFAULT '{}'`);
+    } },
+    { version: 3, name: 'user-account-state', apply() {
+      if (!columnExists(db, 'users', 'account_status')) db.exec(`ALTER TABLE users ADD COLUMN account_status TEXT NOT NULL DEFAULT 'active'`);
+    } }
+  ];
+  const transaction = db.transaction(() => {
+    migrations.forEach((migration) => {
+      if (applied.has(migration.version)) return;
+      migration.apply();
+      db.prepare('INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)').run(migration.version, migration.name, new Date().toISOString());
+    });
+  });
+  transaction();
+}
+function getMigrationStatus() {
+  if (persistenceMode === 'JSON') return { mode: 'JSON', currentVersion: 0, targetVersion: CURRENT_SCHEMA_VERSION, migrations: [] };
+  const db = initializeStorage();
+  const migrations = db.prepare('SELECT version, name, applied_at AS appliedAt FROM schema_migrations ORDER BY version').all();
+  return { mode: persistenceMode, currentVersion: migrations.length ? Math.max(...migrations.map((row) => Number(row.version))) : 0, targetVersion: CURRENT_SCHEMA_VERSION, migrations };
 }
 
 function initializeStorage() {
@@ -150,6 +190,11 @@ function initializeStorage() {
 
   const db = openDatabase();
   const schemaStatements = [
+    `CREATE TABLE IF NOT EXISTS schema_migrations (
+      version INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      applied_at TEXT NOT NULL
+    )`,
     `CREATE TABLE IF NOT EXISTS users (
       email TEXT PRIMARY KEY,
       password_hash TEXT NOT NULL,
@@ -320,6 +365,7 @@ function initializeStorage() {
   });
 
   transaction();
+  runMigrations(db);
   initialized = true;
   return db;
 }
@@ -1291,6 +1337,9 @@ module.exports = {
   backupJsonFiles,
   createDataBackup,
   validateBackup,
+  listBackupDirectories,
+  runMigrations,
+  getMigrationStatus,
   migrateFromJsonFiles,
   readJson,
   writeJson,

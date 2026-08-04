@@ -4,6 +4,9 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const storage = require('./storage');
+const { rankCatalogEntries } = require('./search-ranking.cjs');
+const { buildRecommendations } = require('./discovery-engine.cjs');
+const { normalizeLibraryEntry, buildLibraryStats, buildFranchiseCollections, buildSmartCollections, buildBacklogPlan, buildGamingWrapped, buildMilestones, searchLibrary, getImportAdapters } = require('./sprint4-library-engine.cjs');
 
 const DEFAULT_PORT = 3000;
 const DEFAULT_HOST = '0.0.0.0';
@@ -21,13 +24,130 @@ const FRIENDS_FILE = path.join(DATA_DIR, 'friends.json');
 const CATALOG_FILE = path.join(DATA_DIR, 'catalog.json');
 const PRICE_HISTORY_FILE = path.join(DATA_DIR, 'price-history.json');
 const RELEASE_CACHE_FILE = path.join(DATA_DIR, 'release-cache.json');
+const RELEASE_INTERESTS_FILE = path.join(DATA_DIR, 'release-interests.json');
+const RELEASE_REMINDERS_FILE = path.join(DATA_DIR, 'release-reminders.json');
 const RELEASE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const RELEASE_ARTICLE_CACHE_FILE = path.join(DATA_DIR, 'release-article-cache.json');
 const RELEASE_ARTICLE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const RELEASE_ARTICLE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const RELEASE_PROVIDER_DISCLOSURE_VERSION = '2026-08-04';
 const PRICE_ALERTS_FILE = path.join(DATA_DIR, 'price-alerts.json');
 const NOTIFICATIONS_FILE = path.join(DATA_DIR, 'notifications.json');
 const PROFILES_FILE = path.join(DATA_DIR, 'profiles.json');
+const FEEDBACK_FILE = path.join(DATA_DIR, 'feedback.json');
+const CLIENT_ERRORS_FILE = path.join(DATA_DIR, 'client-errors.json');
+const EXTERNAL_REQUEST_TIMEOUT_MS = Number(process.env.EXTERNAL_REQUEST_TIMEOUT_MS || 8000);
+const EXTERNAL_REQUEST_RETRIES = Math.max(0, Math.min(3, Number(process.env.EXTERNAL_REQUEST_RETRIES || 1)));
+const ALLOWED_CORS_ORIGINS = String(process.env.ALLOWED_CORS_ORIGINS || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+
+
+function sanitizeReleaseReminderPreferences(value = {}) {
+  const allowedOffsets = new Set([0, 1, 3, 7, 14, 30]);
+  const offsets = Array.isArray(value.offsets) ? value.offsets.map(Number).filter((entry) => allowedOffsets.has(entry)) : [7, 1, 0];
+  return {
+    enabled: value.enabled !== false,
+    offsets: [...new Set(offsets)].sort((a, b) => b - a),
+    wishlistReleaseDay: value.wishlistReleaseDay !== false,
+    browserNotifications: Boolean(value.browserNotifications)
+  };
+}
+
+function sanitizeReleaseReminderStore(value = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).map(([username, record]) => {
+    const reminders = {};
+    for (const [id, entry] of Object.entries(record?.reminders || {}).slice(0, 1000)) {
+      const safeId = String(id || '').trim().slice(0, 160);
+      if (!safeId) continue;
+      reminders[safeId] = {
+        id: safeId,
+        title: String(entry?.title || '').trim().slice(0, 240),
+        releaseDate: String(entry?.releaseDate || '').slice(0, 40),
+        offsetDays: [0,1,3,7,14,30].includes(Number(entry?.offsetDays)) ? Number(entry.offsetDays) : 1,
+        enabled: entry?.enabled !== false,
+        createdAt: String(entry?.createdAt || new Date().toISOString()).slice(0, 40)
+      };
+    }
+    return [String(username), { preferences: sanitizeReleaseReminderPreferences(record?.preferences), reminders }];
+  }));
+}
+
+const integrationHealth = new Map();
+const INTEGRATION_CATALOG = Object.freeze({
+  steamStore: {
+    id: 'steam-store',
+    label: 'Steam Store',
+    sourceType: 'public-structured-endpoint',
+    officialApi: false,
+    enabled: true,
+    purpose: 'Upcoming PC releases with hard launch dates',
+    freshnessMs: RELEASE_CACHE_TTL_MS,
+    notes: "Uses public Steam Store JSON endpoints. It is not part of Valve's guaranteed Steam Web API contract."
+  },
+  releaseArticles: {
+    id: 'release-articles',
+    label: 'Gaming press coverage',
+    sourceType: 'public-rss-aggregation',
+    officialApi: false,
+    enabled: true,
+    purpose: 'Recent attributed article links',
+    freshnessMs: RELEASE_ARTICLE_CACHE_TTL_MS,
+    notes: 'Uses Google News RSS and links to the original publisher. Article text is not copied.'
+  },
+  localCatalog: {
+    id: 'local-catalog',
+    label: 'Project Sora local catalog',
+    sourceType: 'local-imported-dataset',
+    officialApi: false,
+    enabled: true,
+    purpose: 'Search, library autocomplete, and local game metadata',
+    freshnessMs: null,
+    notes: 'Static imported data; values are not automatically current.'
+  },
+  openBarcodes: {
+    id: 'open-barcodes',
+    label: 'Open barcode records',
+    sourceType: 'open-structured-data',
+    officialApi: false,
+    enabled: true,
+    purpose: 'Verified UPC/EAN lookup when provenance exists',
+    freshnessMs: null,
+    notes: 'Coverage is partial. Unmatched games remain blank.'
+  },
+  xbox: {
+    id: 'xbox',
+    label: 'Xbox',
+    sourceType: 'partner-api-placeholder',
+    officialApi: true,
+    enabled: false,
+    purpose: 'Future official catalog and account integration',
+    freshnessMs: null,
+    notes: 'Skeleton only; requires approved Microsoft/Xbox access.'
+  },
+  playstation: {
+    id: 'playstation',
+    label: 'PlayStation',
+    sourceType: 'partner-api-placeholder',
+    officialApi: true,
+    enabled: false,
+    purpose: 'Future official catalog and account integration',
+    freshnessMs: null,
+    notes: 'Skeleton only; requires approved PlayStation partner access.'
+  },
+  nintendo: {
+    id: 'nintendo',
+    label: 'Nintendo',
+    sourceType: 'partner-api-placeholder',
+    officialApi: true,
+    enabled: false,
+    purpose: 'Future official catalog and account integration',
+    freshnessMs: null,
+    notes: 'HTML scraping is disabled. Skeleton only until approved structured access is available.'
+  }
+});
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -333,6 +453,9 @@ function ensureDataFiles() {
   if (!fs.existsSync(LIBRARIES_FILE) && storage.getPersistenceMode() === 'JSON') {
     fs.writeFileSync(LIBRARIES_FILE, JSON.stringify({}, null, 2));
   }
+  if (!fs.existsSync(RELEASE_INTERESTS_FILE) && storage.getPersistenceMode() === 'JSON') {
+    fs.writeFileSync(RELEASE_INTERESTS_FILE, JSON.stringify({}, null, 2));
+  }
   if (!fs.existsSync(WISHLISTS_FILE) && storage.getPersistenceMode() === 'JSON') {
     fs.writeFileSync(WISHLISTS_FILE, JSON.stringify({}, null, 2));
   }
@@ -441,19 +564,49 @@ function applySecurityHeaders(res, contentType) {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' https: data:; connect-src 'self' https:;");
-  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=(self)');
   if (contentType) {
     res.setHeader('Content-Type', contentType);
   }
 }
 
+function normalizeOrigin(value) {
+  try {
+    return new URL(String(value || '')).origin;
+  } catch {
+    return '';
+  }
+}
+
+function getAllowedCorsOrigin(req) {
+  const origin = normalizeOrigin(req?.headers?.origin);
+  if (!origin) return '';
+
+  const host = String(req?.headers?.host || '').trim();
+  const sameOriginCandidates = host
+    ? [`https://${host}`, `http://${host}`].map(normalizeOrigin)
+    : [];
+
+  if (sameOriginCandidates.includes(origin)) return origin;
+  if (ALLOWED_CORS_ORIGINS.map(normalizeOrigin).includes(origin)) return origin;
+  return '';
+}
+
+function applyCorsHeaders(req, headers = {}) {
+  const origin = getAllowedCorsOrigin(req);
+  if (origin) {
+    headers['Access-Control-Allow-Origin'] = origin;
+    headers.Vary = headers.Vary ? `${headers.Vary}, Origin` : 'Origin';
+    headers['Access-Control-Allow-Credentials'] = 'true';
+  }
+  headers['Access-Control-Allow-Methods'] = 'GET, POST, DELETE, OPTIONS';
+  headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization';
+  return headers;
+}
+
 function sendJson(res, statusCode, payload, requestId) {
   applySecurityHeaders(res, 'application/json; charset=utf-8');
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-  };
+  const headers = applyCorsHeaders(res.__req, {});
   const resolvedRequestId = requestId || res.__requestId || res.getHeader?.(REQUEST_ID_HEADER);
   if (resolvedRequestId) {
     headers[REQUEST_ID_HEADER] = resolvedRequestId;
@@ -466,54 +619,88 @@ function sendJson(res, statusCode, payload, requestId) {
   }
 }
 
-function fetchSteamJson(url) {
-  return new Promise((resolve, reject) => {
-    const req = https.get(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    }, (res) => {
-      if ((res.statusCode || 500) >= 400) {
-        res.resume();
-        reject(new Error(`Request failed with status ${res.statusCode}`));
-        return;
-      }
-      let data = '';
-      res.on('data', (chunk) => {
-        data += chunk;
-      });
-      res.on('end', () => {
-        try {
-          resolve(JSON.parse(data));
-        } catch (error) {
-          reject(error);
-        }
-      });
-    });
-
-    req.on('error', reject);
+function updateIntegrationHealth(key, update = {}) {
+  integrationHealth.set(key, {
+    ...(integrationHealth.get(key) || {}),
+    ...update,
+    checkedAt: new Date().toISOString()
   });
 }
 
-function fetchText(url) {
-  return new Promise((resolve, reject) => {
-    const req = https.get(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    }, (res) => {
-      if ((res.statusCode || 500) >= 400) {
-        res.resume();
-        reject(new Error(`Request failed with status ${res.statusCode}`));
-        return;
-      }
-      let data = '';
-      res.on('data', (chunk) => {
-        data += chunk;
-      });
-      res.on('end', () => {
-        resolve(data);
-      });
-    });
+function serializeIntegrationStatus(key, definition) {
+  const health = integrationHealth.get(key) || {};
+  return {
+    ...definition,
+    status: definition.enabled ? (health.status || 'unknown') : 'not-configured',
+    lastSuccessAt: health.lastSuccessAt || null,
+    lastFailureAt: health.lastFailureAt || null,
+    lastError: health.lastError || null,
+    checkedAt: health.checkedAt || null
+  };
+}
 
-    req.on('error', reject);
+function requestExternal(url, { expectJson = false, timeoutMs = EXTERNAL_REQUEST_TIMEOUT_MS, retries = EXTERNAL_REQUEST_RETRIES } = {}) {
+  return new Promise((resolve, reject) => {
+    let attempt = 0;
+
+    const run = () => {
+      attempt += 1;
+      const req = https.get(url, {
+        headers: {
+          'User-Agent': 'ProjectSora/0.1 (+https://project-sora-mnoo.onrender.com/)'
+        }
+      }, (res) => {
+        const statusCode = res.statusCode || 500;
+        if (statusCode >= 300 && statusCode < 400 && res.headers.location) {
+          res.resume();
+          requestExternal(new URL(res.headers.location, url).toString(), { expectJson, timeoutMs, retries: Math.max(0, retries - attempt + 1) })
+            .then(resolve, reject);
+          return;
+        }
+        if (statusCode >= 400) {
+          res.resume();
+          const error = new Error(`External request failed with status ${statusCode}`);
+          if (attempt <= retries) return setTimeout(run, 150 * attempt);
+          reject(error);
+          return;
+        }
+
+        let data = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => {
+          data += chunk;
+          if (data.length > 5 * 1024 * 1024) {
+            req.destroy(new Error('External response exceeded 5 MB'));
+          }
+        });
+        res.on('end', () => {
+          if (!expectJson) return resolve(data);
+          try {
+            resolve(JSON.parse(data));
+          } catch (error) {
+            if (attempt <= retries) return setTimeout(run, 150 * attempt);
+            reject(error);
+          }
+        });
+      });
+
+      req.setTimeout(timeoutMs, () => req.destroy(new Error(`External request timed out after ${timeoutMs}ms`)));
+      req.on('error', (error) => {
+        if (attempt <= retries) return setTimeout(run, 150 * attempt);
+        reject(error);
+      });
+    };
+
+    run();
   });
+}
+
+function fetchSteamJson(url) {
+  return requestExternal(url, { expectJson: true });
+}
+
+function fetchText(url) {
+  return requestExternal(url, { expectJson: false });
 }
 
 function stripHtml(text) {
@@ -565,32 +752,12 @@ function parseRssItems(xml, platform) {
   }).filter((item) => item.title);
 }
 
-function extractNintendoArticleBlocks(html) {
-  const blocks = [...html.matchAll(/<article[^>]*>([\s\S]*?)<\/article>/gi)];
-  return blocks.map((matches) => matches[1] || '').filter(Boolean);
-}
-
 async function fetchNintendoReleaseFeed() {
-  try {
-    const html = await fetchText('https://www.nintendo.com/en-gb/whatsnew/');
-    const blocks = extractNintendoArticleBlocks(html);
-    const articleItems = blocks.map((block) => {
-      const title = stripHtml((block.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i) || [])[1])
-        || stripHtml((block.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i) || [])[1])
-        || stripHtml((block.match(/<a[^>]*>([\s\S]*?)<\/a>/i) || [])[1]);
-      const release = stripHtml((block.match(/<time[^>]*datetime="([^"]+)"/i) || [])[1])
-        || stripHtml((block.match(/<time[^>]*>([\s\S]*?)<\/time>/i) || [])[1])
-        || 'Upcoming';
-      const image = (block.match(/<img[^>]*src="([^"]+)"/i) || [])[1] || '';
-      const blurb = stripHtml((block.match(/<p[^>]*>([\s\S]*?)<\/p>/i) || [])[1]) || title;
-      const link = (block.match(/<a[^>]*href="([^"]+)"/i) || [])[1] || '';
-      return { id: `nintendo-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`, title, release, image, blurb, link, source: 'Nintendo', genre: 'Nintendo', platform: 'Nintendo Switch' };
-    }).filter((item) => item.title && item.title !== 'More');
-
-    return articleItems.slice(0, 3);
-  } catch {
-    return [];
-  }
+  updateIntegrationHealth('nintendo', {
+    status: 'not-configured',
+    lastError: 'HTML scraping is disabled; waiting for approved structured provider access.'
+  });
+  return [];
 }
 
 async function fetchRssReleaseFeed(rssUrl, platform) {
@@ -677,7 +844,7 @@ async function fetchSteamReleaseFeed() {
     const appIds = [...new Set([...searchIds, ...featuredIds])].slice(0, 36);
 
     const details = await Promise.all(appIds.map((appId) => fetchSteamAppDetails(appId).catch(() => null)));
-    return details
+    const normalized = details
       .filter((item) => item && isHardLaunchDate(item.releaseTimestamp))
       .sort((a, b) => a.releaseTimestamp - b.releaseTimestamp)
       .map((item) => ({
@@ -688,7 +855,18 @@ async function fetchSteamReleaseFeed() {
         platform: item.platform || 'PC'
       }))
       .slice(0, 30);
-  } catch {
+    updateIntegrationHealth('steamStore', {
+      status: 'healthy',
+      lastSuccessAt: new Date().toISOString(),
+      lastError: null
+    });
+    return normalized;
+  } catch (error) {
+    updateIntegrationHealth('steamStore', {
+      status: 'degraded',
+      lastFailureAt: new Date().toISOString(),
+      lastError: String(error?.message || error || 'Steam Store request failed')
+    });
     return [];
   }
 }
@@ -733,7 +911,7 @@ async function fetchWeeklyReleaseArticles(releases) {
     const cutoff = Date.now() - RELEASE_ARTICLE_WINDOW_MS;
     const releaseTokens = releases.flatMap((release) => significantTitleTokens(release.title));
     const seen = new Set();
-    return parseGoogleNewsItems(xml)
+    const items = parseGoogleNewsItems(xml)
       .filter((article) => Date.parse(article.publishedAt) >= cutoff)
       .filter((article) => {
         const lower = article.title.toLowerCase();
@@ -747,7 +925,10 @@ async function fetchWeeklyReleaseArticles(releases) {
       })
       .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
       .slice(0, 18);
-  } catch {
+    updateIntegrationHealth('releaseArticles', { status: 'healthy', lastSuccessAt: new Date().toISOString(), lastError: null });
+    return items;
+  } catch (error) {
+    updateIntegrationHealth('releaseArticles', { status: 'degraded', lastFailureAt: new Date().toISOString(), lastError: String(error?.message || error || 'Article feed request failed') });
     return [];
   }
 }
@@ -762,7 +943,11 @@ async function getWeeklyReleaseArticles(forceRefresh = false) {
   const items = await fetchWeeklyReleaseArticles(Array.isArray(releaseFeed.items) ? releaseFeed.items : []);
   const payload = {
     updatedAt: new Date().toISOString(),
+    ttlMs: RELEASE_ARTICLE_CACHE_TTL_MS,
     windowDays: 7,
+    sourceType: 'public-rss-aggregation',
+    verifiedProviderApi: false,
+    disclosure: 'Links are discovered through Google News RSS and attributed to the original publisher. Project Sora does not copy article text.',
     sources: ['IGN', 'GameSpot', 'Eurogamer', 'Polygon', 'PC Gamer'],
     items
   };
@@ -777,7 +962,20 @@ async function getDailyReleaseFeed(forceRefresh = false) {
     return cached;
   }
   const items = await fetchLiveReleaseFeed();
-  const payload = { updatedAt: new Date().toISOString(), hardDatesOnly: true, sort: 'soonest-first', sources: ['Steam Store'], items };
+  const payload = {
+    updatedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + RELEASE_CACHE_TTL_MS).toISOString(),
+    ttlMs: RELEASE_CACHE_TTL_MS,
+    hardDatesOnly: true,
+    sort: 'soonest-first',
+    sourceLabel: 'Public Steam Store data',
+    sourceType: 'public-structured-endpoint',
+    verifiedProviderApi: false,
+    disclosureVersion: RELEASE_PROVIDER_DISCLOSURE_VERSION,
+    disclosure: "Dates are independently validated from public Steam Store data. This is not Valve's guaranteed Steam Web API.",
+    sources: ['Steam Store'],
+    items: items.map((item) => ({ ...item, sourceType: 'public-structured-endpoint', verifiedProviderApi: false, dateConfidence: 'hard-date' }))
+  };
   if (items.length) writeJson(RELEASE_CACHE_FILE, payload);
   return items.length ? payload : (Array.isArray(cached.items) ? cached : payload);
 }
@@ -788,21 +986,14 @@ function sanitizeLibraryPayload(value) {
   }
 
   return value.filter(Boolean).map((entry) => ({
-    ...entry,
-    id: String(entry?.id || ''),
-    title: String(entry?.title || ''),
-    platform: String(entry?.platform || ''),
+    ...normalizeLibraryEntry(entry),
     condition: String(entry?.condition || 'Good'),
     purchasePrice: Number(entry?.purchasePrice || 0),
     currentValue: Number(entry?.currentValue || 0),
     metacriticScore: Number(entry?.metacriticScore || 0),
     notes: String(entry?.notes || ''),
     comments: Array.isArray(entry?.comments) ? entry.comments : [],
-    playtimeMinutes: Number(entry?.playtimeMinutes || 0),
-    completionPercent: Number(entry?.completionPercent || 0),
-    coverImage: String(entry?.coverImage || ''),
-    status: normalizePlayStatus(entry?.status, Number(entry?.completionPercent || 0)),
-    completedAt: entry?.status === 'Completed' ? (entry?.completedAt || new Date().toISOString()) : null
+    coverImage: String(entry?.coverImage || '')
   }));
 }
 
@@ -996,7 +1187,14 @@ function sanitizePlatformAccount(platform, value) {
   if (candidate) {
     try {
       const parsed = new URL(candidate);
-      if (parsed.protocol === 'https:') profileUrl = candidate.slice(0, 500);
+      const allowedHosts = {
+        steam: ['steamcommunity.com', 'store.steampowered.com'],
+        xbox: ['xbox.com', 'www.xbox.com'],
+        playstation: ['playstation.com', 'www.playstation.com'],
+        nintendo: ['nintendo.com', 'www.nintendo.com']
+      };
+      const hosts = allowedHosts[platform] || [];
+      if (parsed.protocol === 'https:' && hosts.some((host) => parsed.hostname === host || parsed.hostname.endsWith(`.${host}`))) profileUrl = candidate.slice(0, 500);
     } catch {}
   }
   const visibility = PLATFORM_VISIBILITIES.has(source.visibility) ? source.visibility : 'Public';
@@ -1057,7 +1255,8 @@ function resolveProfileOwner(usersStore, identifier) {
 }
 
 function serializeFavoriteGames(gameIds) {
-  const catalog = sanitizeCatalog(readJson(CATALOG_FILE, defaultCatalog));
+  const catalogValue = readJson(CATALOG_FILE, defaultCatalog);
+  const catalog = Array.isArray(catalogValue) ? catalogValue : defaultCatalog;
   return (Array.isArray(gameIds) ? gameIds : []).map((gameId) => {
     const target = catalog.find((game) => String(game.id || '') === String(gameId || ''));
     if (!target) {
@@ -1447,6 +1646,21 @@ function mergeWishlistEntries(localItems = [], remoteItems = []) {
   return Array.from(byGameId.values()).sort((left, right) => (left.addedAt || '').localeCompare(right.addedAt || ''));
 }
 
+
+const RESERVED_USERNAMES = new Set(['admin','administrator','api','app','developer','help','moderator','official','owner','project-sora','projectsora','root','staff','support','system']);
+function normalizeUsername(value) {
+  return String(value || '').trim().toLowerCase();
+}
+function isValidUsername(value) {
+  const normalized = normalizeUsername(value);
+  return /^[a-z0-9_.]{3,20}$/.test(normalized) && !RESERVED_USERNAMES.has(normalized);
+}
+function isUsernameAvailable(usersStore, value, currentEmail = '') {
+  const normalized = normalizeUsername(value);
+  if (!normalized) return false;
+  return !Object.entries(usersStore || {}).some(([email, record]) => String(email).toLowerCase() !== String(currentEmail).toLowerCase() && normalizeUsername(record?.publicHandle) === normalized);
+}
+
 function createPublicHandle(value) {
   const normalized = String(value || '').trim().toLowerCase();
   if (!normalized) {
@@ -1775,21 +1989,18 @@ function createServer() {
       sendJson(res, statusCode, payload, requestId);
     };
 
+    try {
   if (req.method === 'OPTIONS') {
     applySecurityHeaders(res);
     res.setHeader(REQUEST_ID_HEADER, requestId);
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-    });
+    res.writeHead(204, applyCorsHeaders(req, {}));
     logRequest(req, res, 204, Date.now() - startedAt, requestId);
     return res.end();
   }
 
   if (req.method === 'GET' && url.pathname === '/health') {
     const uptimeMs = Math.round(process.uptime() * 1000);
-    return respond(200, { status: 'ok', service: 'project-sora', uptimeMs, ready: true });
+    return respond(200, { status: 'ok', service: 'project-sora', uptimeMs, ready: true, persistenceMode: storage.getPersistenceMode(), databasePathConfigured: Boolean(storage.DB_PATH), timestamp: new Date().toISOString() });
   }
 
   if (req.method === 'GET' && url.pathname === '/ready') {
@@ -1799,6 +2010,75 @@ function createServer() {
   if (req.method === 'GET' && url.pathname === '/deployment-health') {
     const uptimeMs = Math.round(process.uptime() * 1000);
     return respond(200, { status: 'ok', service: 'project-sora', uptimeMs, ready: true, deployment: 'production' });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/integrations/status') {
+    const releaseCache = readJson(RELEASE_CACHE_FILE, {});
+    const articleCache = readJson(RELEASE_ARTICLE_CACHE_FILE, {});
+    const catalog = readJson(CATALOG_FILE, defaultCatalog);
+    const barcodeCount = catalog.reduce((count, entry) => {
+      const barcodes = Array.isArray(entry?.barcodes) ? entry.barcodes : [entry?.barcode];
+      return count + barcodes.filter(Boolean).length;
+    }, 0);
+
+    return respond(200, {
+      generatedAt: new Date().toISOString(),
+      policy: {
+        htmlScrapingEnabled: false,
+        privateApiCors: 'same-origin',
+        cameraPermission: 'self',
+        dataLabelsRequired: true
+      },
+      integrations: Object.entries(INTEGRATION_CATALOG).map(([key, definition]) => {
+        const status = serializeIntegrationStatus(key, definition);
+        if (key === 'steamStore') {
+          status.cacheUpdatedAt = releaseCache.updatedAt || null;
+          status.cachedItemCount = Array.isArray(releaseCache.items) ? releaseCache.items.length : 0;
+        }
+        if (key === 'releaseArticles') {
+          status.cacheUpdatedAt = articleCache.updatedAt || null;
+          status.cachedItemCount = Array.isArray(articleCache.items) ? articleCache.items.length : 0;
+        }
+        if (key === 'localCatalog') status.recordCount = catalog.length;
+        if (key === 'openBarcodes') status.verifiedBarcodeCount = barcodeCount;
+        return status;
+      })
+    });
+  }
+
+
+  if (req.method === 'GET' && url.pathname === '/api/system/status') {
+    return respond(200, {
+      generatedAt: new Date().toISOString(),
+      service: 'project-sora',
+      persistence: storage.getMigrationStatus ? storage.getMigrationStatus() : { mode: storage.getPersistenceMode() },
+      backups: storage.listBackupDirectories ? storage.listBackupDirectories().slice(-5).map((entry) => path.basename(entry)) : [],
+      integrations: Object.entries(INTEGRATION_CATALOG).map(([key, definition]) => serializeIntegrationStatus(key, definition))
+    });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/client-errors') {
+    try {
+      const body = await parseBody(req);
+      const record = {
+        id: `client-error-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+        createdAt: new Date().toISOString(),
+        kind: String(body.kind || 'client-error').slice(0, 40),
+        message: redactSensitiveString(String(body.message || 'Unknown client error')).slice(0, 500),
+        route: String(body.route || '').slice(0, 200),
+        userAgent: String(body.userAgent || '').slice(0, 300),
+        appVersion: String(body.appVersion || 'beta').slice(0, 80),
+        requestId,
+        details: redactForLogging(body.details || {})
+      };
+      const records = readJson(CLIENT_ERRORS_FILE, []);
+      const next = Array.isArray(records) ? records.slice(-499) : [];
+      next.push(record);
+      writeJson(CLIENT_ERRORS_FILE, next);
+      return respond(202, { ok: true, reference: record.id });
+    } catch (error) {
+      return respond(400, { error: 'Client diagnostic could not be recorded', requestId });
+    }
   }
 
 
@@ -1822,12 +2102,17 @@ function createServer() {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/games') {
-    const searchTerm = (url.searchParams.get('search') || '').toLowerCase();
+    const searchTerm = String(url.searchParams.get('search') || '').trim();
+    const requestedLimit = Number(url.searchParams.get('limit') || (searchTerm ? 30 : 12));
+    const limit = Math.max(1, Math.min(100, Number.isFinite(requestedLimit) ? requestedLimit : 20));
     const catalog = readJson(CATALOG_FILE, defaultCatalog);
-    const filtered = !searchTerm
-      ? catalog
-      : catalog.filter((game) => game.name.toLowerCase().includes(searchTerm));
-    return respond(200, filtered.map((game) => ({ ...game, msrp: Number(game.msrp ?? game.price ?? 0) })));
+    const ranked = rankCatalogEntries(catalog, searchTerm, { limit });
+    return respond(200, ranked.map((game) => ({
+      ...game,
+      msrp: Number(game.msrp ?? game.price ?? 0),
+      availablePlatforms: Array.isArray(game.availablePlatforms) ? game.availablePlatforms : [game.platform].filter(Boolean),
+      editionIds: Array.isArray(game.editionIds) ? game.editionIds : [game.id].filter(Boolean)
+    })));
   }
 
   if (req.method === 'POST' && url.pathname === '/api/catalog/price-history') {
@@ -1909,12 +2194,90 @@ function createServer() {
     return respond(200, buildPriceHistorySummary(gameId, historyEntries));
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/feedback') {
+    try {
+      const body = await parseBody(req);
+      const category = String(body.category || 'other').trim().slice(0, 40);
+      const email = String(body.email || '').trim().slice(0, 160);
+      const summary = String(body.summary || '').trim().slice(0, 140);
+      const details = String(body.details || '').trim().slice(0, 4000);
+      const device = String(body.device || '').trim().slice(0, 180);
+      const page = String(body.page || '').trim().slice(0, 180);
+      const appUrl = String(body.appUrl || '').trim().slice(0, 500);
+      const allowedCategories = new Set(['bug', 'installation', 'feature', 'design', 'other']);
+      if (!allowedCategories.has(category) || summary.length < 4 || details.length < 10) {
+        return respond(400, { error: 'Please provide a valid category, summary, and description.' });
+      }
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return respond(400, { error: 'Please enter a valid follow-up email or leave it blank.' });
+      }
+      const feedback = readJson(FEEDBACK_FILE, []);
+      const record = {
+        id: `feedback-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+        createdAt: new Date().toISOString(),
+        status: 'new',
+        category,
+        email,
+        summary,
+        details,
+        device,
+        page,
+        appUrl,
+        requestId
+      };
+      const next = Array.isArray(feedback) ? feedback.slice(-999) : [];
+      next.push(record);
+      writeJson(FEEDBACK_FILE, next);
+      return respond(201, { ok: true, reference: record.id });
+    } catch (error) {
+      if (error && error.code === 'BODY_TOO_LARGE') return respond(413, { error: 'Feedback is too large.' });
+      throw error;
+    }
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/releases/status') {
+    const releases = await getDailyReleaseFeed(false);
+    const articles = readJson(RELEASE_ARTICLE_CACHE_FILE, {});
+    const releaseUpdatedAt = Date.parse(releases.updatedAt || '');
+    const articleUpdatedAt = Date.parse(articles.updatedAt || '');
+    return respond(200, {
+      generatedAt: new Date().toISOString(),
+      releases: {
+        sourceLabel: releases.sourceLabel || 'Public Steam Store data',
+        sourceType: releases.sourceType || 'public-structured-endpoint',
+        verifiedProviderApi: releases.verifiedProviderApi === true,
+        updatedAt: releases.updatedAt || null,
+        stale: !Number.isFinite(releaseUpdatedAt) || Date.now() - releaseUpdatedAt > RELEASE_CACHE_TTL_MS,
+        itemCount: Array.isArray(releases.items) ? releases.items.length : 0,
+        hardDateCount: Array.isArray(releases.items) ? releases.items.filter((item) => item?.hardDate && Number.isFinite(Number(item.releaseTimestamp))).length : 0,
+        disclosure: releases.disclosure || null
+      },
+      coverage: {
+        sourceType: articles.sourceType || 'public-rss-aggregation',
+        verifiedProviderApi: articles.verifiedProviderApi === true,
+        updatedAt: articles.updatedAt || null,
+        stale: !Number.isFinite(articleUpdatedAt) || Date.now() - articleUpdatedAt > RELEASE_ARTICLE_CACHE_TTL_MS,
+        itemCount: Array.isArray(articles.items) ? articles.items.length : 0,
+        windowDays: Number(articles.windowDays || 7),
+        disclosure: articles.disclosure || 'Coverage links are attributed to their publishers.'
+      }
+    });
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/releases') {
     try {
       const releases = await getDailyReleaseFeed(url.searchParams.get('refresh') === '1');
       return respond(200, releases);
-    } catch {
-      return respond(200, { items: [] });
+    } catch (error) {
+      return respond(200, {
+        updatedAt: new Date().toISOString(),
+        hardDatesOnly: true,
+        sort: 'soonest-first',
+        sourceLabel: 'Public Steam Store data',
+        degraded: true,
+        error: 'Release data is temporarily unavailable.',
+        items: []
+      });
     }
   }
 
@@ -1968,8 +2331,8 @@ function createServer() {
   }
 
   if (req.method === 'GET' && url.pathname.startsWith('/api/profile/')) {
-    const sessionToken = getBearerToken(req);
-    const username = sessionToken ? getSessionUser(sessionToken) : null;
+    const sessionToken = getTokenFromRequest(req);
+    const username = sessionToken ? getUserByToken(sessionToken) : null;
     const identifier = url.pathname.replace('/api/profile/', '');
     const users = sanitizeUserStore(readJson(USERS_FILE, {}));
     const ownerEmail = resolveProfileOwner(users, identifier);
@@ -1990,7 +2353,7 @@ function createServer() {
     const profiles = readJson(PROFILES_FILE, {});
     const profileDetails = sanitizeProfileDetails(profiles[ownerEmail] || {});
     const isOwner = String(username || '').trim().toLowerCase() === String(ownerEmail || '').trim().toLowerCase();
-    const isFriend = username ? areUsersFriends(friendStore, ownerEmail, username) : false;
+    const isFriend = username ? isUsersFriends(friendStore, ownerEmail, username) : false;
     const visiblePlatformAccounts = filterVisiblePlatformAccounts(profileDetails.platformAccounts, isOwner, isFriend);
     const libraries = sanitizeUserStore(readJson(LIBRARIES_FILE, {}));
     const libraryItems = sanitizeLibraryPayloadForProfile(libraries[ownerEmail] || []);
@@ -2358,6 +2721,13 @@ function createServer() {
     return respond(200, { ok: true });
   }
 
+
+  if (req.method === 'GET' && url.pathname === '/api/usernames/availability') {
+    const username = normalizeUsername(url.searchParams.get('username'));
+    const users = sanitizeUserStore(readJson(USERS_FILE, {}));
+    return respond(200, { username, valid: isValidUsername(username), available: isUsernameAvailable(users, username) });
+  }
+
   if (req.method === 'POST' && (url.pathname === '/api/register' || url.pathname === '/api/login')) {
     const clientKey = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
     if (!RATE_LIMIT_BYPASS && isRateLimited(clientKey)) {
@@ -2370,12 +2740,30 @@ function createServer() {
       const body = await parseBody(req);
       const email = String(body.email || '').trim().toLowerCase();
       const password = String(body.password || '').trim();
+      const suppliedUsername = String(body.username || '').trim();
+      let requestedUsername = normalizeUsername(suppliedUsername);
 
       if (!isValidEmail(email) || !password) {
         return respond(400, { error: 'A valid email address and password are required' });
       }
 
       const users = sanitizeUserStore(readJson(USERS_FILE, {}));
+      if (!requestedUsername) {
+        const legacyBase = String(email.split('@')[0] || 'player').toLowerCase().replace(/[^a-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64) || 'player';
+        requestedUsername = legacyBase;
+        let suffix = 1;
+        const original = requestedUsername;
+        while (!isUsernameAvailable(users, requestedUsername)) {
+          requestedUsername = `${original.slice(0, Math.max(3, 20 - String(suffix).length))}${suffix}`;
+          suffix += 1;
+        }
+      }
+      if (suppliedUsername && !isValidUsername(requestedUsername)) {
+        return respond(400, { error: 'Choose a username with 3–20 letters, numbers, underscores, or periods' });
+      }
+      if (!isUsernameAvailable(users, requestedUsername)) {
+        return respond(409, { error: 'Username is already taken' });
+      }
       if (users[email]) {
         return respond(409, { error: 'Account already exists' });
       }
@@ -2386,7 +2774,7 @@ function createServer() {
         salt,
         passwordHash,
         publicId: createPublicUserId(),
-        publicHandle: createPublicHandle(email),
+        publicHandle: requestedUsername,
         privacySettings: sanitizePrivacySettings(),
         emailVerifiedAt: new Date().toISOString(),
         verificationCodeHash: '',
@@ -2467,6 +2855,41 @@ function createServer() {
     return respond(200, { ok: true });
   }
 
+
+  if (req.method === 'GET' && url.pathname === '/api/account/export') {
+    const username = ensureAuthenticated(req, res);
+    if (!username) return;
+    const stores = {
+      profile: sanitizeProfileDetails(readJson(PROFILES_FILE, {})[username] || {}),
+      library: sanitizeLibraryPayload(readJson(LIBRARIES_FILE, {})[username] || []),
+      wishlist: sanitizeWishlistPayload(readJson(WISHLISTS_FILE, {})[username] || []),
+      queue: sanitizeQueuePayload(readJson(QUEUES_FILE, {})[username] || []),
+      activities: sanitizeActivityPayload(readJson(ACTIVITIES_FILE, {})[username] || []),
+      releaseInterests: readJson(RELEASE_INTERESTS_FILE, {})[username] || [],
+      releaseReminders: sanitizeReleaseReminderStore(readJson(RELEASE_REMINDERS_FILE, {}))[username] || { preferences: sanitizeReleaseReminderPreferences({}), reminders: {} }
+    };
+    return respond(200, { exportedAt: new Date().toISOString(), account: { email: username }, data: stores });
+  }
+
+  if (req.method === 'DELETE' && url.pathname === '/api/account') {
+    const username = ensureAuthenticated(req, res);
+    if (!username) return;
+    try {
+      const body = await parseBody(req);
+      if (String(body.confirmation || '') !== 'DELETE') return respond(400, { error: 'Type DELETE to confirm account removal' });
+      const users = sanitizeUserStore(readJson(USERS_FILE, {}));
+      delete users[username];
+      writeJson(USERS_FILE, users);
+      for (const file of [LIBRARIES_FILE, WISHLISTS_FILE, QUEUES_FILE, ACTIVITIES_FILE, PROFILES_FILE, RELEASE_INTERESTS_FILE, RELEASE_REMINDERS_FILE, GAME_FINDER_FILE]) {
+        const store = readJson(file, {});
+        if (store && typeof store === 'object' && !Array.isArray(store)) { delete store[username]; writeJson(file, store); }
+      }
+      const token = getTokenFromRequest(req);
+      if (token) { sessions.delete(token); storage.deleteSession(token); }
+      return respond(200, { ok: true, deleted: true });
+    } catch (error) { return handleServerError(req, res, error, requestId); }
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/library') {
     const username = ensureAuthenticated(req, res);
     if (!username) {
@@ -2475,6 +2898,47 @@ function createServer() {
 
     const libraries = sanitizeUserStore(readJson(LIBRARIES_FILE, {}));
     return respond(200, sanitizeLibraryPayload(libraries[username] || []));
+  }
+
+
+  if (req.method === 'GET' && url.pathname === '/api/library/insights') {
+    const username = ensureAuthenticated(req, res);
+    if (!username) return;
+    const libraries = sanitizeUserStore(readJson(LIBRARIES_FILE, {}));
+    const games = sanitizeLibraryPayload(libraries[username] || []);
+    const reviewCount = games.reduce((sum, game) => sum + (Array.isArray(game.comments) ? game.comments.length : 0), 0);
+    const availableMinutes = Math.min(1440, Math.max(15, Number(url.searchParams.get('minutes') || 60)));
+    return respond(200, {
+      stats: buildLibraryStats(games),
+      franchises: buildFranchiseCollections(games),
+      smartCollections: buildSmartCollections(games).map((collection) => ({ ...collection, games: collection.games.slice(0, 50) })),
+      backlogPlan: buildBacklogPlan(games, availableMinutes),
+      wrapped: buildGamingWrapped(games),
+      milestones: buildMilestones(games, reviewCount),
+      importAdapters: getImportAdapters()
+    });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/library/search') {
+    const username = ensureAuthenticated(req, res);
+    if (!username) return;
+    const libraries = sanitizeUserStore(readJson(LIBRARIES_FILE, {}));
+    const games = sanitizeLibraryPayload(libraries[username] || []);
+    const items = searchLibrary(games, {
+      query: url.searchParams.get('q') || '',
+      status: url.searchParams.get('status') || 'All',
+      platform: url.searchParams.get('platform') || 'All',
+      mediaType: url.searchParams.get('mediaType') || 'All',
+      ownershipStatus: url.searchParams.get('ownershipStatus') || 'All',
+      favorite: url.searchParams.get('favorite') === 'true'
+    });
+    return respond(200, { items: items.slice(0, 500), total: items.length });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/library/import-adapters') {
+    const username = ensureAuthenticated(req, res);
+    if (!username) return;
+    return respond(200, { adapters: getImportAdapters() });
   }
 
   if (req.method === 'GET' && url.pathname === '/api/activity') {
@@ -2598,12 +3062,111 @@ function createServer() {
     }
   }
 
+
+  if (req.method === 'GET' && url.pathname === '/api/discovery/home') {
+    const username = ensureAuthenticated(req, res);
+    if (!username) return;
+    try {
+      const catalogValue = readJson(CATALOG_FILE, defaultCatalog);
+      const catalog = Array.isArray(catalogValue) ? catalogValue : defaultCatalog;
+      const profiles = readJson(PROFILES_FILE, {});
+      const finderStore = readJson(GAME_FINDER_FILE, {});
+      const userData = {
+        library: sanitizeLibraryPayload(readJson(LIBRARIES_FILE, {})[username] || []),
+        wishlist: sanitizeWishlistPayload(readJson(WISHLISTS_FILE, {})[username] || []),
+        favoriteGameIds: Array.isArray(profiles[username]?.favoriteGameIds) ? profiles[username].favoriteGameIds : [],
+        decisions: Array.isArray(finderStore[username]?.decisions) ? finderStore[username].decisions : [],
+        preferences: finderStore[username]?.preferences || {}
+      };
+      const recommendations = buildRecommendations(catalog, userData, { limit: 12, cursor: 0 });
+      const releases = (await getReleaseFeed()).items.slice(0, 8);
+      return respond(200, { recommendations: recommendations.items, profile: recommendations.profile, releases, generatedAt: new Date().toISOString() });
+    } catch (error) { return handleServerError(req, res, error, requestId); }
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/discovery/hubs') {
+    const catalogValue = readJson(CATALOG_FILE, defaultCatalog);
+    const catalog = Array.isArray(catalogValue) ? catalogValue : defaultCatalog;
+    const summarize = (field, splitter) => {
+      const counts = new Map();
+      for (const game of catalog) for (const raw of splitter(game[field])) { const key=String(raw||'').trim(); if(key) counts.set(key,(counts.get(key)||0)+1); }
+      return [...counts.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).slice(0,24).map(([name,count])=>({name,count}));
+    };
+    return respond(200,{genres:summarize('genre',(v)=>String(v||'').split(/[,/|;]/)),platforms:summarize('platform',(v)=>[v]),generatedAt:new Date().toISOString()});
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/discovery/collections') {
+    const catalogValue = readJson(CATALOG_FILE, defaultCatalog);
+    const catalog = Array.isArray(catalogValue) ? catalogValue : defaultCatalog;
+    const unique=(items)=>{const seen=new Set();return items.filter(g=>{const k=String(g.name||g.title||'').toLowerCase();if(!k||seen.has(k))return false;seen.add(k);return true;}).slice(0,12)};
+    const collections=[
+      {id:'top-rated',title:'Top Rated',description:'Critically acclaimed titles',items:unique([...catalog].sort((a,b)=>Number(b.metacriticScore||0)-Number(a.metacriticScore||0)))},
+      {id:'hidden-gems',title:'Hidden Gems',description:'Strong ratings with lower sales visibility',items:unique(catalog.filter(g=>Number(g.metacriticScore||0)>=75&&Number(g.globalSales||0)<2).sort((a,b)=>Number(b.metacriticScore||0)-Number(a.metacriticScore||0)))},
+      {id:'rpg-essentials',title:'RPG Essentials',description:'Role-playing favorites across platforms',items:unique(catalog.filter(g=>/rpg|role-playing/i.test(String(g.genre||''))).sort((a,b)=>Number(b.metacriticScore||0)-Number(a.metacriticScore||0)))},
+      {id:'local-multiplayer',title:'Play Together',description:'Multiplayer and party picks',items:unique(catalog.filter(g=>/party|multiplayer|sports|racing/i.test(String(g.genre||''))).sort((a,b)=>Number(b.globalSales||0)-Number(a.globalSales||0)))}
+    ];
+    return respond(200,{collections,generatedAt:new Date().toISOString()});
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/discovery/recommendations') {
+    const username = ensureAuthenticated(req, res);
+    if (!username) return;
+    try {
+      const catalogValue = readJson(CATALOG_FILE, defaultCatalog);
+      const catalog = Array.isArray(catalogValue) ? catalogValue : defaultCatalog;
+      const profiles = readJson(PROFILES_FILE, {});
+      const finderStore = readJson(GAME_FINDER_FILE, {});
+      const result = buildRecommendations(catalog, {
+        library: sanitizeLibraryPayload(readJson(LIBRARIES_FILE, {})[username] || []),
+        wishlist: sanitizeWishlistPayload(readJson(WISHLISTS_FILE, {})[username] || []),
+        favoriteGameIds: Array.isArray(profiles[username]?.favoriteGameIds) ? profiles[username].favoriteGameIds : [],
+        decisions: Array.isArray(finderStore[username]?.decisions) ? finderStore[username].decisions : [],
+        preferences: finderStore[username]?.preferences && typeof finderStore[username].preferences === 'object' ? finderStore[username].preferences : {}
+      }, {
+        limit: Math.min(50, Math.max(1, Number(url.searchParams.get('limit') || 20))),
+        cursor: Math.max(0, Number(url.searchParams.get('cursor') || 0)),
+        platform: url.searchParams.get('platform') || '',
+        genre: url.searchParams.get('genre') || '',
+        excludeWishlist: url.searchParams.get('includeWishlist') !== '1'
+      });
+      return respond(200, {
+        ...result,
+        generatedAt: new Date().toISOString(),
+        algorithm: 'project-sora-explainable-v1'
+      });
+    } catch (error) {
+      return handleServerError(req, res, error, requestId);
+    }
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/game-finder') {
     const username = ensureAuthenticated(req, res);
     if (!username) return;
     const store = readJson(GAME_FINDER_FILE, {});
     const state = store[username] && typeof store[username] === 'object' ? store[username] : { decisions: [] };
-    return respond(200, { decisions: Array.isArray(state.decisions) ? state.decisions.slice(-1000) : [] });
+    return respond(200, { decisions: Array.isArray(state.decisions) ? state.decisions.slice(-1000) : [], preferences: state.preferences && typeof state.preferences === 'object' ? state.preferences : {} });
+  }
+
+
+  if (req.method === 'PUT' && url.pathname === '/api/game-finder/preferences') {
+    const username = ensureAuthenticated(req, res);
+    if (!username) return;
+    try {
+      const body = await parseBody(req);
+      const cleanList = (value) => [...new Set((Array.isArray(value) ? value : []).map((item) => String(item || '').trim().toLowerCase()).filter(Boolean))].slice(0, 40);
+      const preferences = {
+        mutedGenres: cleanList(body.mutedGenres),
+        mutedPlatforms: cleanList(body.mutedPlatforms),
+        diversityLevel: Math.max(0, Math.min(100, Number(body.diversityLevel ?? 20)))
+      };
+      const store = readJson(GAME_FINDER_FILE, {});
+      const current = store[username] && typeof store[username] === 'object' ? store[username] : { decisions: [] };
+      store[username] = { ...current, preferences, updatedAt: new Date().toISOString() };
+      writeJson(GAME_FINDER_FILE, store);
+      return respond(200, { ok: true, preferences });
+    } catch (error) {
+      return handleServerError(req, res, error, requestId);
+    }
   }
 
   if (req.method === 'POST' && url.pathname === '/api/game-finder/decision') {
@@ -2643,6 +3206,79 @@ function createServer() {
     delete store[username];
     writeJson(GAME_FINDER_FILE, store);
     return respond(200, { ok: true });
+  }
+
+
+  if (req.method === 'GET' && url.pathname === '/api/release-reminders') {
+    const username = ensureAuthenticated(req, res);
+    if (!username) return;
+    const store = sanitizeReleaseReminderStore(readJson(RELEASE_REMINDERS_FILE, {}));
+    return respond(200, store[username] || { preferences: sanitizeReleaseReminderPreferences({}), reminders: {} });
+  }
+
+  if (req.method === 'PUT' && url.pathname === '/api/release-reminders') {
+    const username = ensureAuthenticated(req, res);
+    if (!username) return;
+    try {
+      const body = await parseBody(req);
+      const store = sanitizeReleaseReminderStore(readJson(RELEASE_REMINDERS_FILE, {}));
+      const current = store[username] || { preferences: sanitizeReleaseReminderPreferences({}), reminders: {} };
+      const next = {
+        preferences: sanitizeReleaseReminderPreferences(body?.preferences || current.preferences),
+        reminders: current.reminders || {}
+      };
+      if (body?.reminder && typeof body.reminder === 'object') {
+        const id = String(body.reminder.id || '').trim().slice(0, 160);
+        if (!id) return respond(400, { error: 'A release ID is required' });
+        next.reminders[id] = {
+          id,
+          title: String(body.reminder.title || '').trim().slice(0, 240),
+          releaseDate: String(body.reminder.releaseDate || '').slice(0, 40),
+          offsetDays: [0,1,3,7,14,30].includes(Number(body.reminder.offsetDays)) ? Number(body.reminder.offsetDays) : 1,
+          enabled: body.reminder.enabled !== false,
+          createdAt: String(body.reminder.createdAt || new Date().toISOString()).slice(0, 40)
+        };
+      }
+      if (body?.removeId) delete next.reminders[String(body.removeId)];
+      store[username] = next;
+      writeJson(RELEASE_REMINDERS_FILE, store);
+      return respond(200, { ok: true, ...next });
+    } catch (error) {
+      return handleServerError(req, res, error, requestId);
+    }
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/release-interests') {
+    const username = ensureAuthenticated(req, res);
+    if (!username) return;
+    const store = readJson(RELEASE_INTERESTS_FILE, {});
+    const items = store[username] && typeof store[username] === 'object' ? store[username] : {};
+    return respond(200, { items });
+  }
+
+  if (req.method === 'PUT' && url.pathname === '/api/release-interests') {
+    const username = ensureAuthenticated(req, res);
+    if (!username) return;
+    try {
+      const body = await parseBody(req);
+      const raw = body?.items && typeof body.items === 'object' ? body.items : {};
+      const items = {};
+      for (const [id, entry] of Object.entries(raw).slice(0, 1000)) {
+        const safeId = String(id || '').trim().slice(0, 160);
+        if (!safeId) continue;
+        items[safeId] = {
+          id: safeId,
+          title: String(entry?.title || '').trim().slice(0, 240),
+          markedAt: String(entry?.markedAt || new Date().toISOString()).slice(0, 40)
+        };
+      }
+      const store = readJson(RELEASE_INTERESTS_FILE, {});
+      store[username] = items;
+      writeJson(RELEASE_INTERESTS_FILE, store);
+      return respond(200, { ok: true, items });
+    } catch (error) {
+      return handleServerError(req, res, error, requestId);
+    }
   }
 
   if (req.method === 'GET' && url.pathname === '/api/wishlist') {
@@ -2979,6 +3615,9 @@ function createServer() {
   }
 
   return serveStaticFile(req, res);
+    } catch (error) {
+      return handleServerError(req, res, error, requestId);
+    }
   });
 }
 

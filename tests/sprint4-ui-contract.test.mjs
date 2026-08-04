@@ -1,0 +1,12 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const html=fs.readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
+const app=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+const css=fs.readFileSync(new URL('../public/styles.css',import.meta.url),'utf8');
+assert.match(html,/id="libraryInsightSummary"/);
+assert.match(html,/id="franchiseCollections"/);
+assert.match(html,/id="smartCollections"/);
+assert.match(html,/id="libraryMilestones"/);
+assert.match(app,/function loadSprint4Insights/);
+assert.match(css,/\.library-ecosystem-grid/);
+console.log('Sprint 4 UI contract passed');

@@ -1,4 +1,5 @@
-const CACHE_VERSION = 'project-sora-verified-releases-v16';
+const CACHE_VERSION = 'project-sora-sprint4-v1';
+const CACHE_NAME = CACHE_VERSION;
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -6,6 +7,7 @@ const PRECACHE_URLS = [
   '/offline.html',
   '/styles.css',
   '/manifest.webmanifest',
+  '/assets/project-sora-mobile-qr.png',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/icons/maskable-512.png',
@@ -82,6 +84,10 @@ self.addEventListener('activate', (event) => {
           .map((key) => caches.delete(key))
       ))
       .then(() => self.clients.claim())
+      .then(async () => {
+        const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        clients.forEach((client) => client.postMessage({ type: 'PROJECT_SORA_UPDATED', version: CACHE_VERSION }));
+      })
   );
 });
 

@@ -65,7 +65,9 @@
                 </div>
                 <div class="auth-section">
                   <h3 id="authHeading">Log in to Project Sora</h3>
-                  <input id="authEmail" type="email" placeholder="Email" aria-label="Account email" autocomplete="email" />
+                  <input id="authUsername" type="text" placeholder="Unique username" aria-label="Unique username" autocomplete="username" minlength="3" maxlength="20" pattern="[A-Za-z0-9_.]+" hidden />
+                  <p id="authUsernameStatus" class="section-caption" role="status" aria-live="polite" hidden></p>
+                  <input id="authEmail" type="email" placeholder="Email" aria-label="Account email" autocomplete="email" inputmode="email" />
                   <input id="authPassword" type="password" placeholder="Password" aria-label="Account password" autocomplete="current-password" />
                   <label class="checkbox-row"><input id="rememberMe" type="checkbox" /><span>Remember me on this device</span></label>
                   <button id="authSubmitButton" type="button">Log in</button>
@@ -77,7 +79,8 @@
                 <button id="gameFinderNavButton" type="button" class="ghost" aria-label="Open Game Finder">Open Game Finder</button>
                 <button id="statisticsNavButton" type="button" class="ghost" aria-label="Open collection statistics dashboard">Open Statistics</button>
                 <button id="wishlistNavButton" type="button" class="ghost" aria-label="Jump to wishlist">Go to Wishlist</button>
-                <div id="betaDownloadStatus" class="beta-download-status" role="status" aria-live="polite">Beta downloads are currently unavailable.</div>
+                <button id="supportNavButton" type="button" class="ghost" aria-label="Open mobile install help, frequently asked questions, and feedback">Mobile Install & Support</button>
+                <div id="betaDownloadStatus" class="beta-download-status" role="status" aria-live="polite">Install the hosted Project Sora web app from your browser—no app-store download is required for the closed beta.</div>
                 <div id="syncStatus" class="sync-status" role="status" aria-live="polite">Sync status: idle</div>
               </div>
               <div class="summary-grid" id="summaryGrid"></div>
@@ -264,6 +267,45 @@
                     <input name="completionPercent" type="number" min="0" max="100" step="1" placeholder="0" />
                   </label>
                   <label>
+                    Ownership
+                    <select name="ownershipStatus"><option>Owned</option><option>Subscription</option><option>Borrowed</option><option>Wishlist</option></select>
+                  </label>
+                  <label>
+                    Format
+                    <select name="mediaType"><option>Unknown</option><option>Physical</option><option>Digital</option></select>
+                  </label>
+                  <label>
+                    Purchase date
+                    <input name="purchaseDate" type="date" />
+                  </label>
+                  <label>
+                    Hours played
+                    <input name="playtimeHours" type="number" min="0" step="0.25" placeholder="0" />
+                  </label>
+                  <label>
+                    Personal rating
+                    <input name="personalRating" type="number" min="0" max="10" step="0.5" placeholder="8.5" />
+                  </label>
+                  <label>
+                    Estimated length (hours)
+                    <input name="estimatedHours" type="number" min="0" step="0.5" placeholder="12" />
+                  </label>
+                  <label>
+                    Franchise
+                    <input name="franchise" type="text" maxlength="160" placeholder="Resident Evil" />
+                  </label>
+                  <label>
+                    Genre
+                    <input name="genre" type="text" maxlength="160" placeholder="Survival Horror" />
+                  </label>
+                  <label>
+                    Replay status
+                    <select name="replayStatus"><option>No</option><option>Maybe</option><option>Planned</option><option>Replaying</option></select>
+                  </label>
+                  <label class="checkbox-label">
+                    <input name="favorite" type="checkbox" /> Favorite
+                  </label>
+                  <label>
                     Notes
                     <input name="notes" type="text" placeholder="Collector edition, missing case" />
                   </label>
@@ -303,7 +345,7 @@
           </div>
         </aside>
 
-        <main id="mainContent" class="content-area" tabindex="-1">
+        <main id="mainContent" tabindex="-1" class="content-area">
           <section id="discoveryHero" class="discovery-hero" aria-label="Featured game discovery">
             <div id="discoveryHeroArtwork" class="discovery-hero__artwork" aria-hidden="true"></div>
             <div class="discovery-hero__veil" aria-hidden="true"></div>
@@ -340,6 +382,18 @@
               <button id="refreshForYouButton" type="button" class="ghost">Refresh picks</button>
             </div>
             <div id="forYouGrid" class="for-you-grid" aria-live="polite"></div>
+          </section>
+
+          <section class="card panel wide-panel discovery-hubs" aria-labelledby="discoveryHubsHeading">
+            <div class="section-title-row"><div><p class="eyebrow">Browse your way</p><h2 id="discoveryHubsHeading">Genre & Platform Hubs</h2><p class="section-caption">Jump into focused catalogs without loading the entire library.</p></div></div>
+            <div id="genreHubList" class="hub-chip-grid" aria-label="Genre hubs"></div>
+            <div id="platformHubList" class="hub-chip-grid" aria-label="Platform hubs"></div>
+            <div id="hubResults" class="hub-results" aria-live="polite"></div>
+          </section>
+
+          <section class="card panel wide-panel visual-collections" aria-labelledby="visualCollectionsHeading">
+            <div class="section-title-row"><div><p class="eyebrow">Curated discovery</p><h2 id="visualCollectionsHeading">Collections Worth Exploring</h2><p class="section-caption">Real catalog groupings built from ratings, genres, and sales signals.</p></div></div>
+            <div id="visualCollectionsGrid" class="visual-collections-grid" aria-live="polite"></div>
           </section>
 
           <section class="experience-grid" aria-label="Personal gaming dashboard">
@@ -390,6 +444,22 @@
             </article>
           </section>
 
+          <section class="card panel wide-panel library-ecosystem" aria-labelledby="libraryEcosystemHeading">
+            <div class="section-title-row">
+              <div><p class="eyebrow">Sprint 4</p><h2 id="libraryEcosystemHeading">Library Ecosystem</h2><p class="section-caption">Deep collection tracking, smart organization, backlog planning, milestones, and imports.</p></div>
+              <button id="refreshLibraryInsights" type="button" class="ghost">Refresh insights</button>
+            </div>
+            <div id="libraryInsightSummary" class="library-insight-summary" aria-live="polite"></div>
+            <div class="library-ecosystem-grid">
+              <article><h3>Franchise Collections</h3><div id="franchiseCollections" class="library-mini-grid"></div></article>
+              <article><h3>Smart Collections</h3><div id="smartCollections" class="library-mini-grid"></div></article>
+              <article><h3>Backlog Planner</h3><div class="session-options" role="group" aria-label="Backlog planning time"><button type="button" data-sprint4-minutes="30">30 min</button><button type="button" data-sprint4-minutes="60">1 hour</button><button type="button" data-sprint4-minutes="120">2 hours</button><button type="button" data-sprint4-minutes="240">Long</button></div><div id="sprint4BacklogPlan"></div></article>
+              <article><h3>Milestones</h3><div id="libraryMilestones" class="goal-stack"></div></article>
+              <article><h3>Gaming Wrapped</h3><div id="sprint4Wrapped" class="wrapped-stats"></div></article>
+              <article><h3>Import Connections</h3><div id="libraryImportAdapters" class="library-mini-grid"></div></article>
+            </div>
+          </section>
+
           <section class="card panel wide-panel release-stage">
             <div class="section-title-row">
               <div>
@@ -423,6 +493,7 @@
               </div>
               <span id="releaseCoverageUpdated" class="release-badge">Updated weekly</span>
             </div>
+            <div id="releaseTrustStatus" class="release-trust-status" role="status" aria-live="polite">Checking release data sources…</div>
             <div id="releaseCoverageList" class="release-coverage-grid" aria-live="polite"></div>
           </section>
 
@@ -490,6 +561,16 @@
                   <button type="button" data-finder-quick="queue">Add to Play Queue</button>
                   <button type="button" class="ghost" data-finder-quick="details">View Details</button>
                 </div>
+                <details class="game-finder-preferences"><summary>Recommendation controls</summary>
+                  <div class="game-finder-preference-controls">
+                    <label>Hide genre<input id="gameFinderMuteGenreInput" type="text" list="gameFinderGenreOptions" placeholder="e.g. Sports" /></label>
+                    <button id="gameFinderMuteGenreButton" type="button" class="ghost">Hide genre</button>
+                    <button id="gameFinderLessLikeThisButton" type="button" class="ghost">Less like this</button>
+                    <button id="gameFinderClearMutedButton" type="button" class="ghost">Clear hidden genres</button>
+                    <datalist id="gameFinderGenreOptions"></datalist>
+                    <div id="gameFinderMutedGenres" class="preference-chip-list" aria-live="polite"></div>
+                  </div>
+                </details>
                 <details class="game-finder-history"><summary>Review choices</summary><div class="actions-row"><button id="gameFinderReviewLikesButton" type="button" class="ghost">Likes</button><button id="gameFinderReviewPassesButton" type="button" class="ghost">Passes</button><button id="gameFinderResetButton" type="button" class="danger">Reset</button></div><div id="gameFinderHistoryList" class="friends-list"></div></details>
                 <p class="section-caption">Keyboard: ← pass, → like, ↑ strong interest, Enter details, Backspace undo.</p>
               </aside>
@@ -540,6 +621,56 @@
     </div>
 
     <script type="module" src="/app.js"></script>
+
+    <dialog id="supportDialog" class="support-dialog" aria-labelledby="supportDialogTitle">
+      <div class="support-dialog__shell">
+        <header class="support-dialog__header">
+          <div><p class="eyebrow">Project Sora Closed Beta</p><h2 id="supportDialogTitle">Mobile Install, FAQ & Feedback</h2><p>Scan the QR code to open Project Sora on your phone, install the PWA, or report a beta issue.</p></div>
+          <button id="closeSupportDialog" type="button" class="icon-button" aria-label="Close support">×</button>
+        </header>
+        <div class="support-dialog__grid">
+          <section class="support-install-card" aria-labelledby="mobileInstallHeading">
+            <h3 id="mobileInstallHeading">Open on mobile</h3>
+            <img class="support-qr" src="/assets/project-sora-mobile-qr.png" alt="QR code that opens Project Sora on a mobile device" width="320" height="320" />
+            <a class="button-link" href="https://project-sora-mnoo.onrender.com/" target="_blank" rel="noopener noreferrer">Open Project Sora</a>
+            <p class="section-caption">The QR code opens the secure hosted web app. It does not download an APK or App Store package.</p>
+          </section>
+          <section class="support-faq" aria-labelledby="installHelpHeading">
+            <h3 id="installHelpHeading">Download & installation help</h3>
+            <details open><summary>How do I install on iPhone or iPad?</summary><p>Open Project Sora in Safari, tap Share, choose <strong>Add to Home Screen</strong>, then confirm.</p></details>
+            <details><summary>How do I install on Android?</summary><p>Open Project Sora in Chrome, tap the browser menu, then choose <strong>Install app</strong> or <strong>Add to Home screen</strong>.</p></details>
+            <details><summary>How do I install on Windows or Mac?</summary><p>Open Project Sora in Chrome or Edge. Use the install icon in the address bar, or open the browser menu and choose <strong>Install Project Sora</strong>.</p></details>
+            <details><summary>The install option is missing—what should I try?</summary><p>Use Safari on iOS or Chrome/Edge on Android and desktop, confirm the site finished loading, and avoid private browsing. You can still use Project Sora normally without installing it.</p></details>
+            <details><summary>What should I include in a bug report?</summary><p>Include what you expected, what happened, the device/browser, the page or feature, and clear steps that reproduce the issue. Do not include passwords or API keys.</p></details>
+          </section>
+        </div>
+        <section class="support-integrations" aria-labelledby="integrationStatusHeading">
+          <div class="support-integrations__heading">
+            <div><h3 id="integrationStatusHeading">Data source status</h3><p class="section-caption">See which sources are active, cached, or waiting for approved provider access.</p></div>
+            <button id="refreshIntegrationStatus" type="button" class="ghost">Refresh status</button>
+          </div>
+          <div id="integrationStatusList" class="integration-status-list" role="status" aria-live="polite">
+            <div class="skeleton-card" aria-hidden="true"></div>
+          </div>
+          <p class="section-caption">Project Sora labels public feeds, imported datasets, and future official integrations separately. HTML scraping is disabled.</p>
+        </section>
+        <section class="support-feedback" aria-labelledby="feedbackHeading">
+          <div><h3 id="feedbackHeading">Send beta feedback</h3><p class="section-caption">Bug reports, feature suggestions, visual issues, and install problems are welcome.</p></div>
+          <form id="feedbackForm">
+            <div class="support-form-grid">
+              <label>Category<select id="feedbackCategory" required><option value="bug">Bug</option><option value="installation">Installation help</option><option value="feature">Feature request</option><option value="design">Design or usability</option><option value="other">Other</option></select></label>
+              <label>Email for follow-up (optional)<input id="feedbackEmail" type="email" autocomplete="email" maxlength="160" placeholder="you@example.com" /></label>
+              <label class="support-form-full">Summary<input id="feedbackSummary" type="text" required minlength="4" maxlength="140" placeholder="Briefly describe the issue" /></label>
+              <label class="support-form-full">Details<textarea id="feedbackDetails" required minlength="10" maxlength="4000" rows="6" placeholder="What happened, what did you expect, and how can we reproduce it?"></textarea></label>
+              <label>Device / browser<input id="feedbackDevice" type="text" maxlength="180" placeholder="Example: iPhone 15, Safari" /></label>
+              <label>Page or feature<input id="feedbackPage" type="text" maxlength="180" placeholder="Example: Upcoming Releases" /></label>
+              <label class="support-honeypot" aria-hidden="true">Website<input id="feedbackWebsite" type="text" tabindex="-1" autocomplete="off" /></label>
+            </div>
+            <div class="actions-row"><button id="submitFeedbackButton" type="submit">Send feedback</button><span id="feedbackStatus" role="status" aria-live="polite"></span></div>
+          </form>
+        </section>
+      </div>
+    </dialog>
   
     <dialog id="barcodeScannerDialog" class="barcode-scanner-dialog" aria-labelledby="barcodeScannerTitle">
       <div class="barcode-scanner-header">

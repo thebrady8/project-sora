@@ -8,8 +8,10 @@ const catalog = fs.readFileSync(new URL('../public/catalog-data.js', import.meta
 
 test('discovery queue excludes invented fallback dates and requires finite hard dates', () => {
   assert.match(catalog, /PREMIUM_RELEASE_FALLBACK = \[\]/);
-  assert.match(app, /Number\.isFinite\(timestamp\)/);
-  assert.match(app, /sort\(\(a, b\) => Number\(a\.releaseTimestamp\) - Number\(b\.releaseTimestamp\)\)/);
+  assert.match(app, /normalizeReleaseQueue/);
+  const pipeline = fs.readFileSync(new URL('../public/release-pipeline.mjs', import.meta.url), 'utf8');
+  assert.match(pipeline, /Number\.isFinite\(item\.releaseTimestamp\)/);
+  assert.match(pipeline, /sort\(\(a, b\) => a\.releaseTimestamp - b\.releaseTimestamp/);
   assert.match(server, /filter\(\(item\) => item && item\.hardDate && isHardLaunchDate/);
 });
 
