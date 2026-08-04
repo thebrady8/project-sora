@@ -5756,6 +5756,37 @@ function getPersonalizedCandidates() {
   }).sort((a,b) => b._match - a._match);
 }
 
+
+function validateImageUrl(value, fallback = '') {
+  const candidate = String(value || '').trim();
+
+  if (!candidate) {
+    return fallback;
+  }
+
+  try {
+    const url = new URL(candidate, window.location.origin);
+
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      return fallback;
+    }
+
+    const blockedHosts = new Set([
+      'placehold.co',
+      'via.placeholder.com',
+      'dummyimage.com'
+    ]);
+
+    if (blockedHosts.has(url.hostname.toLowerCase())) {
+      return fallback;
+    }
+
+    return url.href;
+  } catch {
+    return fallback;
+  }
+}
+
 function renderForYouExperience(shuffle = false) {
   const grid = document.getElementById('forYouGrid');
   if (!grid) return;
