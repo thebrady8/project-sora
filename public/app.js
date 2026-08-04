@@ -1048,32 +1048,48 @@ async function refreshReleaseCalendar() {
   }
 }
 
-function getBackgroundCoverCandidates() {
-  const candidates = [
-    ...releaseCalendarData.map((item) => item.image),
-    ...PREMIUM_RELEASE_FALLBACK.map((item) => item.image),
-    ...GAME_CATALOG.map((game) => game.image)
-  ];
-
-  return [...new Set(candidates.filter((url) => {
-    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
-      return false;
-    }
-    return !url.includes('game-cover-placeholder');
-  }))];
+function getGameArtworkUrl(item) {
+  const raw = item?.heroImage || item?.headerImage || item?.image || item?.coverImage || '';
+  return typeof raw === 'string' ? raw.trim() : '';
 }
 
-function preloadSharpBackgroundCover(url) {
+function isPreferredCapsuleArtwork(url) {
+  return /(?:header|hero|capsule|library_hero|wide|landscape)\.(?:jpe?g|png|webp)(?:\?|$)/i.test(url)
+    || /steamstatic|steamusercontent|akamaihd/i.test(url);
+}
+
+function getBackgroundCoverCandidates() {
+  const records = [...releaseCalendarData, ...PREMIUM_RELEASE_FALLBACK, ...GAME_CATALOG];
+  const seen = new Set();
+  return records.map((item) => ({
+    id: String(item?.id || item?.appId || item?.name || item?.title || ''),
+    title: String(item?.title || item?.name || 'Featured game'),
+    image: getGameArtworkUrl(item),
+    platform: String(item?.platform || item?.platforms || ''),
+    genre: String(item?.genre || item?.genres || ''),
+    score: Number(item?.metacriticScore || item?.score || item?.rating || 0),
+    release: item?.release || item?.releaseDate || '',
+    source: item
+  })).filter((item) => {
+    if (!/^https?:\/\//i.test(item.image) || item.image.includes('game-cover-placeholder')) return false;
+    if (seen.has(item.image)) return false;
+    seen.add(item.image);
+    return true;
+  }).sort((a, b) => Number(isPreferredCapsuleArtwork(b.image)) - Number(isPreferredCapsuleArtwork(a.image)) || b.score - a.score);
+}
+
+function preloadSharpBackgroundCover(item) {
   return new Promise((resolve) => {
     const image = new Image();
     image.decoding = 'async';
     image.referrerPolicy = 'no-referrer';
     image.onload = () => {
-      const longestSide = Math.max(image.naturalWidth, image.naturalHeight);
-      resolve(longestSide >= 700 ? url : null);
+      const width = image.naturalWidth || 0;
+      const height = image.naturalHeight || 0;
+      resolve(width >= 900 && height >= 400 && width >= height * 1.25 ? { ...item, naturalWidth: width, naturalHeight: height } : null);
     };
     image.onerror = () => resolve(null);
-    image.src = url;
+    image.src = item.image;
   });
 }
 
@@ -1082,55 +1098,121 @@ function renderBackgroundCoverSet(layer, covers) {
   covers.forEach((cover, index) => {
     const panel = document.createElement('div');
     panel.className = `background-cover-panel background-cover-panel--${index + 1}`;
-    panel.style.backgroundImage = `url("${String(cover).replace(/"/g, '%22')}")`;
+    panel.style.backgroundImage = `url("${String(cover.image || cover).replace(/"/g, '%22')}")`;
+    panel.setAttribute('role', 'presentation');
     layer.append(panel);
   });
+}
+
+function shuffledWithoutImmediateRepeat(items, previousIds = []) {
+  const previous = new Set(previousIds);
+  const preferred = items.filter((item) => !previous.has(item.id || item.image));
+  const pool = preferred.length >= 6 ? preferred : items;
+  return pool.map((item) => ({ item, sort: Math.random() })).sort((a, b) => a.sort - b.sort).map(({ item }) => item);
+}
+
+function setupBackgroundParallax() {
+  if (document.documentElement.dataset.backgroundParallaxReady === 'true') return;
+  document.documentElement.dataset.backgroundParallaxReady = 'true';
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  let targetX = 0, targetY = 0, currentX = 0, currentY = 0, rafId = 0;
+  const animate = () => {
+    currentX += (targetX - currentX) * 0.075;
+    currentY += (targetY - currentY) * 0.075;
+    document.documentElement.style.setProperty('--background-parallax-x', `${currentX.toFixed(2)}px`);
+    document.documentElement.style.setProperty('--background-parallax-y', `${currentY.toFixed(2)}px`);
+    rafId = requestAnimationFrame(animate);
+  };
+  window.addEventListener('pointermove', (event) => {
+    targetX = ((event.clientX / Math.max(window.innerWidth, 1)) - 0.5) * -18;
+    targetY = ((event.clientY / Math.max(window.innerHeight, 1)) - 0.5) * -12;
+  }, { passive: true });
+  window.addEventListener('scroll', () => { targetY = Math.max(-16, Math.min(16, window.scrollY * -0.015)); }, { passive: true });
+  rafId = requestAnimationFrame(animate);
+  window.addEventListener('pagehide', () => cancelAnimationFrame(rafId), { once: true });
+}
+
+function buildTrendingCollections(items) {
+  const container = document.getElementById('trendingCollections');
+  if (!container) return;
+  const groups = [
+    { title: 'Top Rated', icon: '★', items: [...items].sort((a, b) => b.score - a.score).slice(0, 4) },
+    { title: 'Coming Soon', icon: '◷', items: items.filter((item) => item.release).slice(0, 4) },
+    { title: 'PC Favorites', icon: '▣', items: items.filter((item) => /pc|windows|steam/i.test(item.platform)).slice(0, 4) }
+  ].filter((group) => group.items.length);
+  container.innerHTML = groups.map((group) => `
+    <button type="button" class="trending-collection" data-featured-id="${escapeHtml(group.items[0]?.id || '')}">
+      <span class="trending-collection__icon">${group.icon}</span>
+      <span><strong>${escapeHtml(group.title)}</strong><small>${group.items.length} featured titles</small></span>
+      <span aria-hidden="true">→</span>
+    </button>`).join('');
+}
+
+function renderDiscoveryHero(items, index = 0) {
+  const hero = document.getElementById('discoveryHero');
+  const artwork = document.getElementById('discoveryHeroArtwork');
+  const title = document.getElementById('discoveryHeroTitle');
+  const copy = document.getElementById('discoveryHeroCopy');
+  const chips = document.getElementById('heroPlatformChips');
+  const progress = document.getElementById('heroProgress');
+  const primary = document.getElementById('heroPrimaryAction');
+  if (!hero || !artwork || !title || !copy || !items.length) return;
+  const item = items[index % items.length];
+  hero.dataset.featuredId = item.id;
+  artwork.style.backgroundImage = `url("${String(item.image).replace(/"/g, '%22')}")`;
+  title.textContent = item.title;
+  copy.textContent = item.source?.blurb || item.source?.description || `${item.genre || 'Featured'} title${item.platform ? ` for ${item.platform}` : ''}.`;
+  if (chips) chips.innerHTML = [item.platform, item.genre].filter(Boolean).map((value) => `<span>${escapeHtml(value)}</span>`).join('');
+  if (progress) progress.innerHTML = items.slice(0, 5).map((_, dotIndex) => `<span class="${dotIndex === index % Math.min(items.length, 5) ? 'is-active' : ''}"></span>`).join('');
+  if (primary) primary.onclick = () => {
+    const release = findReleaseById(item.id);
+    window.location.hash = release ? `#upcoming/${encodeURIComponent(item.id)}` : '#game-finder';
+  };
 }
 
 async function startBackgroundRotation() {
   const rotator = document.getElementById('backgroundRotator');
   const rotatorSecondary = document.getElementById('backgroundRotatorSecondary');
-  if (!rotator || !rotatorSecondary || rotator.dataset.rotationReady === 'true') {
-    return;
-  }
-
+  if (!rotator || !rotatorSecondary || rotator.dataset.rotationReady === 'true') return;
   rotator.dataset.rotationReady = 'true';
+  setupBackgroundParallax();
   const candidates = getBackgroundCoverCandidates();
-  if (!candidates.length) {
-    return;
-  }
-
-  const sample = candidates.slice(0, 40);
-  const checked = await Promise.all(sample.map(preloadSharpBackgroundCover));
+  if (!candidates.length) return;
+  const preferredSample = candidates.slice(0, 60);
+  const checked = await Promise.all(preferredSample.map(preloadSharpBackgroundCover));
   const sharpCovers = checked.filter(Boolean);
-  const images = sharpCovers.length >= 6 ? sharpCovers : sample;
-  if (!images.length) {
-    return;
-  }
-
-  let cursor = 0;
+  const images = sharpCovers.length >= 6 ? sharpCovers : preferredSample;
+  if (!images.length) return;
+  buildTrendingCollections(images);
+  const heroItems = images.slice(0, Math.min(8, images.length));
+  let heroIndex = 0;
+  renderDiscoveryHero(heroItems, heroIndex);
+  document.getElementById('heroSecondaryAction')?.addEventListener('click', () => {
+    document.getElementById('upcomingReleaseRotator')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
   let activeLayer = rotator;
   let upcomingLayer = rotatorSecondary;
-
+  let previousIds = [];
   const getNextSet = () => {
-    const count = Math.min(6, images.length);
-    const set = Array.from({ length: count }, (_, offset) => images[(cursor + offset) % images.length]);
-    cursor = (cursor + Math.max(2, count - 1)) % images.length;
+    const shuffled = shuffledWithoutImmediateRepeat(images, previousIds);
+    const set = shuffled.slice(0, Math.min(6, shuffled.length));
+    previousIds = set.map((item) => item.id || item.image);
     return set;
   };
-
   renderBackgroundCoverSet(activeLayer, getNextSet());
   activeLayer.classList.add('is-active');
-
-  window.setInterval(() => {
+  const rotate = () => {
     renderBackgroundCoverSet(upcomingLayer, getNextSet());
     upcomingLayer.classList.add('is-active');
-
+    heroIndex = (heroIndex + 1) % heroItems.length;
+    renderDiscoveryHero(heroItems, heroIndex);
     window.setTimeout(() => {
       activeLayer.classList.remove('is-active');
       [activeLayer, upcomingLayer] = [upcomingLayer, activeLayer];
-    }, 1600);
-  }, 9000);
+    }, 1800);
+    window.setTimeout(rotate, 12000 + Math.floor(Math.random() * 3001));
+  };
+  window.setTimeout(rotate, 12000 + Math.floor(Math.random() * 3001));
 }
 
 function refreshGameMatchRecommendations() {
