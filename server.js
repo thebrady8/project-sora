@@ -22,6 +22,9 @@ const CATALOG_FILE = path.join(DATA_DIR, 'catalog.json');
 const PRICE_HISTORY_FILE = path.join(DATA_DIR, 'price-history.json');
 const RELEASE_CACHE_FILE = path.join(DATA_DIR, 'release-cache.json');
 const RELEASE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const RELEASE_ARTICLE_CACHE_FILE = path.join(DATA_DIR, 'release-article-cache.json');
+const RELEASE_ARTICLE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const RELEASE_ARTICLE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const PRICE_ALERTS_FILE = path.join(DATA_DIR, 'price-alerts.json');
 const NOTIFICATIONS_FILE = path.join(DATA_DIR, 'notifications.json');
 const PROFILES_FILE = path.join(DATA_DIR, 'profiles.json');
@@ -601,16 +604,23 @@ async function fetchRssReleaseFeed(rssUrl, platform) {
 
 function parseSteamReleaseTimestamp(releaseDate) {
   const text = String(releaseDate?.date || '').trim();
-  if (!text || /coming soon|tba/i.test(text)) {
-    return Number.MAX_SAFE_INTEGER;
+  if (!text || /coming soon|tba|to be announced|q[1-4]|spring|summer|fall|autumn|winter/i.test(text)) {
+    return null;
   }
 
   const parsed = new Date(text);
   if (Number.isNaN(parsed.getTime())) {
-    return Number.MAX_SAFE_INTEGER;
+    return null;
   }
 
   return parsed.getTime();
+}
+
+function isHardLaunchDate(timestamp) {
+  const time = Number(timestamp);
+  const now = Date.now();
+  const twelveMonths = now + (365 * 24 * 60 * 60 * 1000);
+  return Number.isFinite(time) && time >= now - (24 * 60 * 60 * 1000) && time <= twelveMonths;
 }
 
 function fetchSteamAppDetails(appId) {
@@ -640,86 +650,124 @@ function fetchSteamAppDetails(appId) {
     });
 }
 
+async function fetchSteamUpcomingAppIds() {
+  try {
+    const url = 'https://store.steampowered.com/search/results/?query&start=0&count=50&dynamic_data=&sort_by=_ASC&filter=comingsoon&category1=998&infinite=1&cc=US&l=english';
+    const payload = await fetchSteamJson(url);
+    const html = String(payload?.results_html || '');
+    const ids = [];
+    for (const match of html.matchAll(/data-ds-appid=\"(\d+)\"/g)) {
+      if (!ids.includes(match[1])) ids.push(match[1]);
+    }
+    for (const match of html.matchAll(/\/app\/(\d+)\//g)) {
+      if (!ids.includes(match[1])) ids.push(match[1]);
+    }
+    return ids.slice(0, 36);
+  } catch {
+    return [];
+  }
+}
+
 async function fetchSteamReleaseFeed() {
   try {
-    const featuredCategories = await fetchSteamJson('https://store.steampowered.com/api/featuredcategories/?l=en&cc=US');
+    const searchIds = await fetchSteamUpcomingAppIds();
+    const featuredCategories = await fetchSteamJson('https://store.steampowered.com/api/featuredcategories/?l=en&cc=US').catch(() => ({}));
     const comingSoon = Array.isArray(featuredCategories?.coming_soon?.items) ? featuredCategories.coming_soon.items : [];
-    const newReleases = Array.isArray(featuredCategories?.new_releases?.items) ? featuredCategories.new_releases.items : [];
-    const itemPool = [...comingSoon, ...newReleases]
-      .filter((item, index, list) => list.findIndex((candidate) => candidate.id === item.id) === index)
-      .slice(0, 8);
+    const featuredIds = comingSoon.map((item) => String(item.id || '')).filter(Boolean);
+    const appIds = [...new Set([...searchIds, ...featuredIds])].slice(0, 36);
 
-    const details = await Promise.all(itemPool.map((item) => fetchSteamAppDetails(item.id)));
-    const releases = details
-      .filter(Boolean)
-      .sort((a, b) => (a.releaseTimestamp || Number.MAX_SAFE_INTEGER) - (b.releaseTimestamp || Number.MAX_SAFE_INTEGER))
+    const details = await Promise.all(appIds.map((appId) => fetchSteamAppDetails(appId).catch(() => null)));
+    return details
+      .filter((item) => item && isHardLaunchDate(item.releaseTimestamp))
+      .sort((a, b) => a.releaseTimestamp - b.releaseTimestamp)
       .map((item) => ({
         ...item,
-        release: item.release || 'Upcoming release',
+        hardDate: true,
+        release: new Date(item.releaseTimestamp).toISOString().slice(0, 10),
         genre: item.genre || 'Game',
-        platform: item.platform || 'PC / Console'
-      }));
-
-    return releases.length ? releases : [];
+        platform: item.platform || 'PC'
+      }))
+      .slice(0, 30);
   } catch {
     return [];
   }
 }
 
 async function fetchLiveReleaseFeed() {
-  const [steamData, xboxData, playstationData, nintendoData] = await Promise.all([
-    fetchSteamReleaseFeed(),
-    fetchRssReleaseFeed('https://news.xbox.com/en-us/feed/', 'Xbox'),
-    fetchRssReleaseFeed('https://blog.playstation.com/feed/', 'PlayStation'),
-    fetchNintendoReleaseFeed()
-  ]);
+  const steamData = await fetchSteamReleaseFeed();
+  return steamData
+    .filter((item) => item && item.hardDate && isHardLaunchDate(item.releaseTimestamp))
+    .sort((a, b) => a.releaseTimestamp - b.releaseTimestamp)
+    .slice(0, 30);
+}
 
-  const merged = new Map();
-  const allItems = [...steamData, ...xboxData, ...playstationData, ...nintendoData];
-
-  allItems.forEach((item) => {
-    const title = String(item.title || '').trim();
-    if (!title) {
-      return;
-    }
-
-    const normalized = {
-      ...item,
+function parseGoogleNewsItems(xml) {
+  const blocks = [...String(xml || '').matchAll(/<item[^>]*>([\s\S]*?)<\/item>/gi)];
+  return blocks.map((matches) => {
+    const block = matches[1] || '';
+    const rawTitle = getXmlTagValue(block, 'title');
+    const link = getXmlTagValue(block, 'link');
+    const pubDate = getXmlTagValue(block, 'pubDate');
+    const source = getXmlTagValue(block, 'source') || (rawTitle.includes(' - ') ? rawTitle.split(' - ').pop() : 'Gaming press');
+    const title = rawTitle.replace(/\s+-\s+[^-]+$/, '').trim();
+    const publishedAt = new Date(pubDate).getTime();
+    return {
+      id: `article-${crypto.createHash('sha1').update(link || rawTitle).digest('hex').slice(0, 12)}`,
       title,
-      release: item.release || 'Upcoming',
-      genre: item.genre || 'Game',
-      platform: item.platform || 'PC / Console',
-      image: item.image || '',
-      blurb: item.blurb || title,
-      releaseTimestamp: item.releaseTimestamp || new Date(item.release || Date.now()).getTime()
+      link,
+      source,
+      publishedAt: Number.isFinite(publishedAt) ? new Date(publishedAt).toISOString() : '',
+      summary: getXmlTagValue(block, 'description') || title
     };
+  }).filter((item) => item.title && item.link && item.publishedAt);
+}
 
-    if (!merged.has(title.toLowerCase())) {
-      merged.set(title.toLowerCase(), normalized);
-      return;
-    }
+function significantTitleTokens(title) {
+  return String(title || '').toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length >= 4 && !['game','games','edition','official','release'].includes(token));
+}
 
-    const existing = merged.get(title.toLowerCase());
-    merged.set(title.toLowerCase(), {
-      ...existing,
-      ...normalized,
-      image: normalized.image || existing.image,
-      blurb: normalized.blurb || existing.blurb,
-      platform: normalized.platform || existing.platform,
-      genre: normalized.genre || existing.genre
-    });
-  });
+async function fetchWeeklyReleaseArticles(releases) {
+  const query = encodeURIComponent('(site:ign.com OR site:gamespot.com OR site:eurogamer.net OR site:polygon.com OR site:pcgamer.com) video game release review when:7d');
+  try {
+    const xml = await fetchText(`https://news.google.com/rss/search?q=${query}&hl=en-US&gl=US&ceid=US:en`);
+    const cutoff = Date.now() - RELEASE_ARTICLE_WINDOW_MS;
+    const releaseTokens = releases.flatMap((release) => significantTitleTokens(release.title));
+    const seen = new Set();
+    return parseGoogleNewsItems(xml)
+      .filter((article) => Date.parse(article.publishedAt) >= cutoff)
+      .filter((article) => {
+        const lower = article.title.toLowerCase();
+        return releaseTokens.length === 0 || releaseTokens.some((token) => lower.includes(token));
+      })
+      .filter((article) => {
+        const key = article.title.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
+      .slice(0, 18);
+  } catch {
+    return [];
+  }
+}
 
-  const now = Date.now();
-  const twelveMonths = now + RELEASE_CACHE_TTL_MS * 365;
-  return [...merged.values()]
-    .map((item) => ({ ...item, id: item.id || `${String(item.source || item.platform || 'release').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${String(item.title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}` }))
-    .filter((item) => {
-      const time = Number(item.releaseTimestamp);
-      return !Number.isFinite(time) || time === Number.MAX_SAFE_INTEGER || (time >= now - 86400000 && time <= twelveMonths);
-    })
-    .sort((a, b) => (a.releaseTimestamp || Number.MAX_SAFE_INTEGER) - (b.releaseTimestamp || Number.MAX_SAFE_INTEGER))
-    .slice(0, 60);
+async function getWeeklyReleaseArticles(forceRefresh = false) {
+  const cached = readJson(RELEASE_ARTICLE_CACHE_FILE, {});
+  const cachedAt = Date.parse(cached.updatedAt || '');
+  if (!forceRefresh && Array.isArray(cached.items) && Number.isFinite(cachedAt) && Date.now() - cachedAt < RELEASE_ARTICLE_CACHE_TTL_MS) {
+    return cached;
+  }
+  const releaseFeed = await getDailyReleaseFeed(false);
+  const items = await fetchWeeklyReleaseArticles(Array.isArray(releaseFeed.items) ? releaseFeed.items : []);
+  const payload = {
+    updatedAt: new Date().toISOString(),
+    windowDays: 7,
+    sources: ['IGN', 'GameSpot', 'Eurogamer', 'Polygon', 'PC Gamer'],
+    items
+  };
+  writeJson(RELEASE_ARTICLE_CACHE_FILE, payload);
+  return payload;
 }
 
 async function getDailyReleaseFeed(forceRefresh = false) {
@@ -729,7 +777,7 @@ async function getDailyReleaseFeed(forceRefresh = false) {
     return cached;
   }
   const items = await fetchLiveReleaseFeed();
-  const payload = { updatedAt: new Date().toISOString(), sources: ['Steam', 'Xbox Wire', 'PlayStation Blog', 'Nintendo News'], items };
+  const payload = { updatedAt: new Date().toISOString(), hardDatesOnly: true, sort: 'soonest-first', sources: ['Steam Store'], items };
   if (items.length) writeJson(RELEASE_CACHE_FILE, payload);
   return items.length ? payload : (Array.isArray(cached.items) ? cached : payload);
 }
@@ -1867,6 +1915,15 @@ function createServer() {
       return respond(200, releases);
     } catch {
       return respond(200, { items: [] });
+    }
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/release-articles') {
+    try {
+      const articles = await getWeeklyReleaseArticles(url.searchParams.get('refresh') === '1');
+      return respond(200, articles);
+    } catch {
+      return respond(200, { updatedAt: new Date().toISOString(), windowDays: 7, items: [] });
     }
   }
 

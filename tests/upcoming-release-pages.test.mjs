@@ -14,11 +14,23 @@ test('upcoming releases have calendar, detail routes, and interest controls', ()
   assert.match(app, /data-release-action=\"wishlist\"/);
 });
 
-test('release feed is cached daily and aggregates major platform sources', () => {
+test('release feed is cached daily, hard-date-only, and ordered soonest first', () => {
   assert.match(server, /RELEASE_CACHE_TTL_MS/);
   assert.match(server, /getDailyReleaseFeed/);
-  assert.match(server, /Steam/);
-  assert.match(server, /Xbox Wire/);
-  assert.match(server, /PlayStation Blog/);
-  assert.match(server, /Nintendo News/);
+  assert.match(server, /hardDatesOnly: true/);
+  assert.match(server, /sort: 'soonest-first'/);
+  assert.match(server, /isHardLaunchDate/);
+  assert.match(server, /Steam Store/);
+});
+
+test('release coverage uses a rolling seven-day window and weekly source list', () => {
+  assert.match(server, /RELEASE_ARTICLE_WINDOW_MS/);
+  assert.match(server, /getWeeklyReleaseArticles/);
+  assert.match(server, /IGN/);
+  assert.match(server, /GameSpot/);
+  assert.match(server, /Eurogamer/);
+  assert.match(server, /Polygon/);
+  assert.match(server, /PC Gamer/);
+  assert.match(html, /releaseCoverageList/);
+  assert.match(app, /refreshReleaseArticles/);
 });

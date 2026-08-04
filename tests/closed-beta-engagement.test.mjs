@@ -1,0 +1,16 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+assert.match(html, /id="forYouGrid"/);
+assert.match(html, /id="backlogPlannerResult"/);
+assert.match(html, /id="collectionGoals"/);
+assert.match(html, /id="gamingWrappedPreview"/);
+assert.match(app, /function renderForYouExperience/);
+assert.match(app, /function renderCollectionGoalsExperience/);
+assert.match(app, /function renderReviewIntelligenceExperience/);
+assert.match(app, /function initializeBetaExperienceControls/);
+assert.match(css, /\.for-you-grid/);
+assert.match(css, /@media \(prefers-reduced-motion:reduce\)/);
+console.log('Closed beta engagement experience test passed');

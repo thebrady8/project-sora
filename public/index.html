@@ -330,11 +330,71 @@
             <div id="trendingCollections" class="trending-collections"></div>
           </section>
 
+          <section class="engagement-hub" aria-labelledby="forYouHeading">
+            <div class="engagement-hub__header">
+              <div>
+                <p class="eyebrow">Personalized for your play style</p>
+                <h2 id="forYouHeading">For You Today</h2>
+                <p class="section-caption">Fresh recommendations, backlog momentum, community signals, and collection progress in one place.</p>
+              </div>
+              <button id="refreshForYouButton" type="button" class="ghost">Refresh picks</button>
+            </div>
+            <div id="forYouGrid" class="for-you-grid" aria-live="polite"></div>
+          </section>
+
+          <section class="experience-grid" aria-label="Personal gaming dashboard">
+            <article class="card panel experience-card backlog-planner">
+              <div class="experience-card__heading">
+                <div><p class="eyebrow">Backlog planner</p><h2>Plan a play session</h2></div>
+                <span aria-hidden="true">⏱</span>
+              </div>
+              <p>Choose how much time you have and Project Sora will surface the strongest fit from your collection.</p>
+              <div class="session-options" role="group" aria-label="Available play time">
+                <button type="button" data-session-minutes="30">30 min</button>
+                <button type="button" data-session-minutes="60">1 hour</button>
+                <button type="button" data-session-minutes="120">2 hours</button>
+                <button type="button" data-session-minutes="240">Long session</button>
+              </div>
+              <div id="backlogPlannerResult" class="experience-result" aria-live="polite"></div>
+            </article>
+
+            <article class="card panel experience-card">
+              <div class="experience-card__heading"><div><p class="eyebrow">Collection goals</p><h2>Your momentum</h2></div><span aria-hidden="true">◎</span></div>
+              <div id="collectionGoals" class="goal-stack"></div>
+            </article>
+
+            <article class="card panel experience-card">
+              <div class="experience-card__heading"><div><p class="eyebrow">Review intelligence</p><h2>What your ratings say</h2></div><span aria-hidden="true">✦</span></div>
+              <div id="reviewIntelligence" class="experience-result"></div>
+            </article>
+
+            <article class="card panel experience-card wrapped-card">
+              <div class="experience-card__heading"><div><p class="eyebrow">Gaming Wrapped</p><h2>Your year so far</h2></div><span aria-hidden="true">↗</span></div>
+              <div id="gamingWrappedPreview" class="wrapped-stats"></div>
+              <button id="shareWrappedButton" type="button" class="ghost">Copy share summary</button>
+            </article>
+
+            <article class="card panel experience-card community-pulse">
+              <div class="experience-card__heading"><div><p class="eyebrow">Community pulse</p><h2>Friends & activity</h2></div><span aria-hidden="true">◉</span></div>
+              <div id="communityPulse" class="experience-result"></div>
+            </article>
+
+            <article class="card panel experience-card quick-lists-card">
+              <div class="experience-card__heading"><div><p class="eyebrow">Quick collections</p><h2>Build your next list</h2></div><span aria-hidden="true">＋</span></div>
+              <div class="quick-list-actions">
+                <button type="button" data-quick-list="hidden-gems">Hidden Gems</button>
+                <button type="button" data-quick-list="weekend">Weekend Queue</button>
+                <button type="button" data-quick-list="favorites">All-Time Favorites</button>
+              </div>
+              <div id="quickListResult" class="experience-result"></div>
+            </article>
+          </section>
+
           <section class="card panel wide-panel release-stage">
             <div class="section-title-row">
               <div>
                 <h2>Upcoming Releases</h2>
-                <p class="section-caption">A rotating spotlight of upcoming launches and collector-favorite releases.</p>
+                <p class="section-caption">Verified hard launch dates, ordered soonest first. Public Steam/PC data refreshes daily; undated announcements and news posts are excluded.</p>
               </div>
               <div class="release-toolbar">
                 <label class="release-calendar-filter">
@@ -342,9 +402,9 @@
                   <select id="releasePlatformFilter" aria-label="Filter upcoming releases by platform">
                     <option value="All">All platforms</option>
                     <option value="Steam">Steam / PC</option>
-                    <option value="Xbox">Xbox</option>
-                    <option value="PlayStation">PlayStation</option>
-                    <option value="Nintendo">Nintendo</option>
+                    <option value="Xbox" disabled>Xbox — official feed pending</option>
+                    <option value="PlayStation" disabled>PlayStation — official feed pending</option>
+                    <option value="Nintendo" disabled>Nintendo — official feed pending</option>
                   </select>
                 </label>
                 <button id="releaseCalendarButton" type="button" class="release-badge release-badge--button">Upcoming game calendar</button>
@@ -353,6 +413,17 @@
               </div>
             </div>
             <div id="upcomingReleaseRotator" class="upcoming-release-rotator" tabindex="0"></div>
+          </section>
+
+          <section class="card panel wide-panel release-coverage" aria-labelledby="releaseCoverageHeading">
+            <div class="section-title-row">
+              <div>
+                <h2 id="releaseCoverageHeading">Latest Release Coverage</h2>
+                <p class="section-caption">Recent reporting and reviews matched to upcoming titles. Stories automatically expire after seven days.</p>
+              </div>
+              <span id="releaseCoverageUpdated" class="release-badge">Updated weekly</span>
+            </div>
+            <div id="releaseCoverageList" class="release-coverage-grid" aria-live="polite"></div>
           </section>
 
           <section class="card panel wide-panel">

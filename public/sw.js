@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'project-sora-steam-discovery-v13';
+const CACHE_VERSION = 'project-sora-verified-releases-v16';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

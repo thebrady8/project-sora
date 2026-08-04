@@ -6,7 +6,7 @@ const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'u
 
 assert.ok(app.includes('function getBackgroundCoverCandidates'), 'should build a cover candidate pool');
 assert.ok(app.includes('preloadSharpBackgroundCover'), 'should validate image quality before use');
-assert.ok(app.includes('width >= 900 && height >= 400'), 'should reject very small images');
+assert.ok(app.includes('width >= 1000 && height >= 450'), 'should reject very small images');
 assert.ok(app.includes('renderBackgroundCoverSet'), 'should render rotating cover sets');
 assert.ok(css.includes('.background-cover-panel'), 'should style the Steam-like cover panels');
 assert.ok(css.includes('grid-template-columns'), 'should use a cover mosaic instead of stretching one image');

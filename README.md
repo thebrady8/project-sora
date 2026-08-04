@@ -93,3 +93,7 @@ The importer validates GTIN checksums, requires an exact normalized title match 
 
 ## Account access
 Accounts are created without an email verification-code requirement in this beta build. Users can sign in immediately after registration. Do not add platform passwords, API keys, or other secrets to profile fields or commit them to the repository.
+
+## Verified release discovery
+
+The Upcoming Releases queue now accepts only finite hard launch dates within the next 12 months, sorts them soonest-first, refreshes its public Steam Store feed daily, and excludes undated news posts. The Latest Release Coverage panel refreshes from a rolling seven-day window of IGN, GameSpot, Eurogamer, Polygon, and PC Gamer coverage. Console store APIs are intentionally not labeled as connected until official public access is available.

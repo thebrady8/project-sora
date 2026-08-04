@@ -363,7 +363,7 @@ let currentStatusFilter = 'All';
 const gameSearchKeyboardState = { value: -1 };
 const profileSearchKeyboardState = { value: -1 };
 
-let releaseCalendarData = sortReleaseDataChronologically([...PREMIUM_RELEASE_FALLBACK]);
+let releaseCalendarData = [];
 let releaseHeroIndex = 0;
 let releaseRotationTimer = null;
 let releaseAutoRotateEnabled = true;
@@ -371,6 +371,9 @@ let releasePlatformSelection = 'All';
 let releaseFeedUpdatedAt = '';
 let releaseRefreshPromise = null;
 let currentReleaseDetailId = '';
+let releaseArticlesData = [];
+let releaseArticleIndex = 0;
+let releaseArticleTimer = null;
 const RELEASE_INTEREST_KEY = 'project-sora-release-interests';
 
 function renderLibrarySkeleton() {
@@ -680,19 +683,19 @@ function saveReleaseInterests(value) {
 }
 
 function getFilteredReleaseCalendar() {
-  const now = Date.now();
-  const twelveMonths = now + (365 * 24 * 60 * 60 * 1000);
-  return releaseCalendarData.filter((item) => {
-    const platform = String(item.platform || '').toLowerCase();
-    const source = String(item.source || '').toLowerCase();
-    const platformMatch = releasePlatformSelection === 'All'
-      || platform.includes(releasePlatformSelection.toLowerCase())
-      || source.includes(releasePlatformSelection.toLowerCase())
-      || (releasePlatformSelection === 'Steam' && /pc|windows|mac|linux|steam/.test(platform));
-    const releaseTime = Number(item.releaseTimestamp || parseReleaseDate(item.release));
-    const dateMatch = !Number.isFinite(releaseTime) || releaseTime === Number.MAX_SAFE_INTEGER || (releaseTime >= now - 86400000 && releaseTime <= twelveMonths);
-    return platformMatch && dateMatch;
-  });
+  const now = Date.now() - 86400000;
+  const twelveMonths = Date.now() + (365 * 24 * 60 * 60 * 1000);
+  return releaseCalendarData
+    .filter((item) => {
+      const timestamp = Number(item.releaseTimestamp);
+      if (!Number.isFinite(timestamp) || timestamp < now || timestamp > twelveMonths) return false;
+      if (releasePlatformSelection === 'All') return true;
+      const platform = String(item.platform || item.source || '').toLowerCase();
+      const selected = releasePlatformSelection.toLowerCase();
+      if (selected === 'steam') return platform.includes('windows') || platform.includes('linux') || platform.includes('mac') || platform.includes('pc') || String(item.source).toLowerCase() === 'steam';
+      return platform.includes(selected);
+    })
+    .sort((a, b) => Number(a.releaseTimestamp) - Number(b.releaseTimestamp));
 }
 
 function releaseSlug(item) {
@@ -768,10 +771,10 @@ function renderReleaseCalendar() {
   }
 
   const filteredItems = getFilteredReleaseCalendar();
-  const items = filteredItems.length ? filteredItems : (releasePlatformSelection === 'All' ? sortReleaseDataChronologically([...PREMIUM_RELEASE_FALLBACK]) : []);
+  const items = filteredItems;
 
   if (!items.length) {
-    container.innerHTML = '<div class="empty-state">Release calendar is unavailable right now.</div>';
+    container.innerHTML = '<div class="empty-state">No verified releases with hard launch dates are available for this filter right now.</div>';
     return;
   }
 
@@ -849,48 +852,31 @@ function stopReleaseCalendarRotation() {
 
 function startReleaseCalendarRotation() {
   const container = document.getElementById('upcomingReleaseRotator');
-  if (!container || container.dataset.releaseRotationStarted === 'true') {
-    return;
-  }
+  if (!container || container.dataset.releaseRotationStarted === 'true') return;
 
   container.dataset.releaseRotationStarted = 'true';
   renderReleaseCalendar();
   stopReleaseCalendarRotation();
   releaseRotationTimer = window.setInterval(() => {
-    if (!releaseAutoRotateEnabled || !releaseCalendarData.length) {
-      return;
-    }
-
-    releaseHeroIndex = (releaseHeroIndex + 1) % releaseCalendarData.length;
+    const items = getFilteredReleaseCalendar();
+    if (!releaseAutoRotateEnabled || items.length < 2) return;
+    releaseHeroIndex = (releaseHeroIndex + 1) % items.length;
     renderReleaseCalendar();
-  }, 5000);
+  }, 7000);
 
-  container.addEventListener('mouseenter', () => {
-    releaseAutoRotateEnabled = false;
-  }, { once: true });
-
-  container.addEventListener('mouseleave', () => {
-    releaseAutoRotateEnabled = true;
-  }, { once: true });
-
-  container.addEventListener('focusin', () => {
-    releaseAutoRotateEnabled = false;
-  }, { once: true });
-
-  container.addEventListener('focusout', () => {
-    releaseAutoRotateEnabled = true;
-  }, { once: true });
+  container.addEventListener('mouseenter', () => { releaseAutoRotateEnabled = false; });
+  container.addEventListener('mouseleave', () => { releaseAutoRotateEnabled = true; });
+  container.addEventListener('focusin', () => { releaseAutoRotateEnabled = false; });
+  container.addEventListener('focusout', () => { releaseAutoRotateEnabled = true; });
 }
 
 function rotateReleaseCalendar(direction) {
-  if (!releaseCalendarData.length) {
-    return;
-  }
-
-  const nextIndex = (releaseHeroIndex + direction + releaseCalendarData.length) % releaseCalendarData.length;
-  releaseHeroIndex = nextIndex;
+  const items = getFilteredReleaseCalendar();
+  if (!items.length) return;
+  releaseHeroIndex = (releaseHeroIndex + direction + items.length) % items.length;
   releaseAutoRotateEnabled = false;
   renderReleaseCalendar();
+  window.setTimeout(() => { releaseAutoRotateEnabled = true; }, 5000);
 }
 
 function initializeReleaseCarouselControls() {
@@ -997,6 +983,50 @@ function initializeReleaseCarouselControls() {
   });
 }
 
+function renderReleaseArticles() {
+  const container = document.getElementById('releaseCoverageList');
+  const updated = document.getElementById('releaseCoverageUpdated');
+  if (!container) return;
+  if (!releaseArticlesData.length) {
+    container.innerHTML = '<div class="empty-state">No recent matching release coverage was found in the current seven-day window.</div>';
+    if (updated) updated.textContent = 'Rolling 7-day window';
+    return;
+  }
+  const visibleCount = Math.min(3, releaseArticlesData.length);
+  const visible = Array.from({ length: visibleCount }, (_, offset) => releaseArticlesData[(releaseArticleIndex + offset) % releaseArticlesData.length]);
+  container.innerHTML = visible.map((article) => `
+    <a class="release-article-card" href="${escapeHtml(article.link)}" target="_blank" rel="noopener noreferrer">
+      <span class="release-article-card__source">${escapeHtml(article.source || 'Gaming press')}</span>
+      <h3>${escapeHtml(article.title)}</h3>
+      <p>${escapeHtml(new Date(article.publishedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }))}</p>
+      <span class="release-article-card__link">Read coverage ↗</span>
+    </a>`).join('');
+}
+
+function startReleaseArticleRotation() {
+  if (releaseArticleTimer) window.clearInterval(releaseArticleTimer);
+  renderReleaseArticles();
+  if (releaseArticlesData.length <= 3) return;
+  releaseArticleTimer = window.setInterval(() => {
+    releaseArticleIndex = (releaseArticleIndex + 1) % releaseArticlesData.length;
+    renderReleaseArticles();
+  }, 9000);
+}
+
+async function refreshReleaseArticles() {
+  try {
+    const data = await apiRequest('/api/release-articles');
+    releaseArticlesData = Array.isArray(data?.items) ? data.items : [];
+    releaseArticleIndex = 0;
+    const updated = document.getElementById('releaseCoverageUpdated');
+    if (updated) updated.textContent = data?.updatedAt ? `Updated ${new Date(data.updatedAt).toLocaleDateString()}` : 'Rolling 7-day window';
+  } catch (error) {
+    console.warn('Release coverage could not be loaded:', error);
+    releaseArticlesData = [];
+  }
+  startReleaseArticleRotation();
+}
+
 async function refreshReleaseCalendar() {
   if (releaseRefreshPromise) {
     return releaseRefreshPromise;
@@ -1018,10 +1048,10 @@ async function refreshReleaseCalendar() {
             ? data
             : [];
       releaseFeedUpdatedAt = String(data?.updatedAt || '');
-      releaseCalendarData = mergeReleaseCalendar(liveItems, PREMIUM_RELEASE_FALLBACK).map(normalizeReleaseEntry);
+      releaseCalendarData = liveItems.map(normalizeReleaseEntry).filter((item) => Number.isFinite(item.releaseTimestamp) && item.releaseTimestamp < Number.MAX_SAFE_INTEGER).sort((a, b) => a.releaseTimestamp - b.releaseTimestamp);
     } catch (error) {
       console.warn('Using fallback release calendar data:', error);
-      releaseCalendarData = sortReleaseDataChronologically([...PREMIUM_RELEASE_FALLBACK]);
+      releaseCalendarData = [];
     }
 
     if (container) {
@@ -1071,7 +1101,8 @@ function getBackgroundCoverCandidates() {
     release: item?.release || item?.releaseDate || '',
     source: item
   })).filter((item) => {
-    if (!/^https?:\/\//i.test(item.image) || item.image.includes('game-cover-placeholder')) return false;
+    if (!/^https?:\/\//i.test(item.image)) return false;
+    if (/game-cover-placeholder|placehold\.co|placeholder|text=/i.test(item.image)) return false;
     if (seen.has(item.image)) return false;
     seen.add(item.image);
     return true;
@@ -1086,7 +1117,7 @@ function preloadSharpBackgroundCover(item) {
     image.onload = () => {
       const width = image.naturalWidth || 0;
       const height = image.naturalHeight || 0;
-      resolve(width >= 900 && height >= 400 && width >= height * 1.25 ? { ...item, naturalWidth: width, naturalHeight: height } : null);
+      resolve(width >= 1000 && height >= 450 && width >= height * 1.35 ? { ...item, naturalWidth: width, naturalHeight: height } : null);
     };
     image.onerror = () => resolve(null);
     image.src = item.image;
@@ -1141,10 +1172,10 @@ function buildTrendingCollections(items) {
     { title: 'PC Favorites', icon: '▣', items: items.filter((item) => /pc|windows|steam/i.test(item.platform)).slice(0, 4) }
   ].filter((group) => group.items.length);
   container.innerHTML = groups.map((group) => `
-    <button type="button" class="trending-collection" data-featured-id="${escapeHtml(group.items[0]?.id || '')}">
-      <span class="trending-collection__icon">${group.icon}</span>
-      <span><strong>${escapeHtml(group.title)}</strong><small>${group.items.length} featured titles</small></span>
-      <span aria-hidden="true">→</span>
+    <button type="button" class="trending-collection" data-featured-id="${escapeHtml(group.items[0]?.id || '')}" aria-label="Open ${escapeHtml(group.title)} collection">
+      <span class="trending-collection__icon" aria-hidden="true">${group.icon}</span>
+      <span class="trending-collection__copy"><strong>${escapeHtml(group.title)}</strong><small>${group.items.length} featured titles</small></span>
+      <span class="trending-collection__arrow" aria-hidden="true">→</span>
     </button>`).join('');
 }
 
@@ -1164,10 +1195,45 @@ function renderDiscoveryHero(items, index = 0) {
   copy.textContent = item.source?.blurb || item.source?.description || `${item.genre || 'Featured'} title${item.platform ? ` for ${item.platform}` : ''}.`;
   if (chips) chips.innerHTML = [item.platform, item.genre].filter(Boolean).map((value) => `<span>${escapeHtml(value)}</span>`).join('');
   if (progress) progress.innerHTML = items.slice(0, 5).map((_, dotIndex) => `<span class="${dotIndex === index % Math.min(items.length, 5) ? 'is-active' : ''}"></span>`).join('');
-  if (primary) primary.onclick = () => {
-    const release = findReleaseById(item.id);
-    window.location.hash = release ? `#upcoming/${encodeURIComponent(item.id)}` : '#game-finder';
-  };
+  if (primary) {
+    primary.dataset.featuredId = item.id;
+    primary.setAttribute('aria-label', `View ${item.title}`);
+  }
+}
+
+
+function initializeDiscoveryControls() {
+  if (document.documentElement.dataset.discoveryControlsReady === 'true') return;
+  document.documentElement.dataset.discoveryControlsReady = 'true';
+
+  document.addEventListener('click', (event) => {
+    const primary = event.target.closest('#heroPrimaryAction');
+    if (primary) {
+      event.preventDefault();
+      event.stopPropagation();
+      const featuredId = primary.dataset.featuredId || document.getElementById('discoveryHero')?.dataset.featuredId || '';
+      const release = featuredId ? findReleaseById(featuredId) : null;
+      window.location.hash = release ? `#upcoming/${encodeURIComponent(featuredId)}` : '#game-finder';
+      return;
+    }
+
+    const secondary = event.target.closest('#heroSecondaryAction');
+    if (secondary) {
+      event.preventDefault();
+      event.stopPropagation();
+      document.getElementById('upcomingReleaseRotator')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    const collection = event.target.closest('.trending-collection[data-featured-id]');
+    if (collection) {
+      event.preventDefault();
+      event.stopPropagation();
+      const featuredId = collection.dataset.featuredId || '';
+      const release = featuredId ? findReleaseById(featuredId) : null;
+      window.location.hash = release ? `#upcoming/${encodeURIComponent(featuredId)}` : '#game-finder';
+    }
+  });
 }
 
 async function startBackgroundRotation() {
@@ -1181,21 +1247,20 @@ async function startBackgroundRotation() {
   const preferredSample = candidates.slice(0, 60);
   const checked = await Promise.all(preferredSample.map(preloadSharpBackgroundCover));
   const sharpCovers = checked.filter(Boolean);
-  const images = sharpCovers.length >= 6 ? sharpCovers : preferredSample;
+  const images = sharpCovers.length ? sharpCovers : preferredSample.filter((item) => isPreferredCapsuleArtwork(item.image));
   if (!images.length) return;
   buildTrendingCollections(images);
   const heroItems = images.slice(0, Math.min(8, images.length));
   let heroIndex = 0;
   renderDiscoveryHero(heroItems, heroIndex);
-  document.getElementById('heroSecondaryAction')?.addEventListener('click', () => {
-    document.getElementById('upcomingReleaseRotator')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  });
+  initializeDiscoveryControls();
   let activeLayer = rotator;
   let upcomingLayer = rotatorSecondary;
   let previousIds = [];
   const getNextSet = () => {
     const shuffled = shuffledWithoutImmediateRepeat(images, previousIds);
-    const set = shuffled.slice(0, Math.min(6, shuffled.length));
+    const uniqueSet = shuffled.slice(0, Math.min(6, shuffled.length));
+    const set = Array.from({ length: 6 }, (_, index) => uniqueSet[index % uniqueSet.length]);
     previousIds = set.map((item) => item.id || item.image);
     return set;
   };
@@ -4729,11 +4794,13 @@ async function initializeApp() {
     }
 
     attachSuggestionEvents();
+    initializeDiscoveryControls();
     startBackgroundRotation();
     renderReleaseCalendar();
     await refreshReleaseCalendar().catch(() => {
       renderReleaseCalendar();
     });
+    await refreshReleaseArticles();
     startReleaseCalendarRotation();
     initializeReleaseCarouselControls();
 
@@ -5109,7 +5176,216 @@ window.addEventListener('hashchange', () => {
   if (window.location.hash === '#game-finder') showGameFinder();
 });
 
+
+function betaToast(message) {
+  let toast = document.getElementById('betaExperienceToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'betaExperienceToast';
+    toast.className = 'toast-beta';
+    toast.setAttribute('role', 'status');
+    toast.setAttribute('aria-live', 'polite');
+    document.body.append(toast);
+  }
+  toast.textContent = message;
+  toast.classList.add('is-visible');
+  clearTimeout(betaToast.timer);
+  betaToast.timer = setTimeout(() => toast.classList.remove('is-visible'), 2800);
+}
+
+function normalizePersonalRating(game) {
+  const value = Number(game?.userRating || game?.rating || game?.metacriticScore || 0);
+  if (!Number.isFinite(value)) return 0;
+  return value <= 10 ? value * 10 : value;
+}
+
+function deriveTasteProfile() {
+  const library = getCurrentLibrary();
+  const genreWeights = new Map();
+  const platformWeights = new Map();
+  library.forEach((game) => {
+    const rating = normalizePersonalRating(game);
+    const completion = Number(game.completionPercent || 0);
+    const weight = 1 + (rating >= 80 ? 2 : rating >= 65 ? 1 : 0) + (completion >= 100 ? 1 : 0);
+    String(game.genre || game.genres || '').split(/[,/|]/).map((part) => part.trim()).filter(Boolean).forEach((genre) => {
+      genreWeights.set(genre, (genreWeights.get(genre) || 0) + weight);
+    });
+    const platform = String(game.platform || '').trim();
+    if (platform) platformWeights.set(platform, (platformWeights.get(platform) || 0) + weight);
+  });
+  return {
+    topGenres: [...genreWeights.entries()].sort((a,b) => b[1]-a[1]).map(([name]) => name),
+    topPlatforms: [...platformWeights.entries()].sort((a,b) => b[1]-a[1]).map(([name]) => name)
+  };
+}
+
+function getPersonalizedCandidates() {
+  const library = getCurrentLibrary();
+  const owned = new Set(library.map((game) => String(game.title || '').toLowerCase()));
+  const taste = deriveTasteProfile();
+  const source = [...releaseCalendarData, ...GAME_CATALOG].filter((item) => item && item.title && !owned.has(String(item.title).toLowerCase()));
+  const seen = new Set();
+  return source.map((item) => {
+    const genre = String(item.genre || item.genres || 'Game');
+    const platform = String(item.platform || item.platforms || '');
+    let score = 52;
+    const genreIndex = taste.topGenres.findIndex((entry) => genre.toLowerCase().includes(entry.toLowerCase()));
+    const platformIndex = taste.topPlatforms.findIndex((entry) => platform.toLowerCase().includes(entry.toLowerCase()));
+    if (genreIndex >= 0) score += Math.max(8, 24 - genreIndex * 4);
+    if (platformIndex >= 0) score += Math.max(4, 14 - platformIndex * 3);
+    score += Math.min(10, Math.round(Number(item.metacriticScore || item.score || 0) / 10));
+    return { ...item, _match: Math.max(55, Math.min(98, score)) };
+  }).filter((item) => {
+    const key = String(item.title).toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).sort((a,b) => b._match - a._match);
+}
+
+function renderForYouExperience(shuffle = false) {
+  const grid = document.getElementById('forYouGrid');
+  if (!grid) return;
+  let candidates = getPersonalizedCandidates();
+  if (shuffle) candidates = candidates.map((item) => ({ item, sort: Math.random() })).sort((a,b) => a.sort-b.sort).map(({item}) => item);
+  const picks = candidates.slice(0, 4);
+  if (!picks.length) {
+    grid.innerHTML = '<div class="empty-state">Add and rate a few games to unlock personalized picks.</div>';
+    return;
+  }
+  grid.innerHTML = picks.map((item) => {
+    const image = validateImageUrl(item.heroImage || item.headerImage || item.image || item.coverImage || '') || GAME_COVER_PLACEHOLDER;
+    const reason = deriveTasteProfile().topGenres[0] ? `Matches your interest in ${deriveTasteProfile().topGenres[0]}.` : 'Popular with players exploring new genres.';
+    return `<button type="button" class="for-you-card" data-for-you-id="${escapeHtml(String(item.id || ''))}" aria-label="Open ${escapeHtml(item.title)}">
+      <span class="for-you-card__art" style="background-image:url('${escapeHtml(image)}')"></span>
+      <span class="for-you-card__content"><span class="match-pill">${item._match}% match</span><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(reason)}</p></span>
+    </button>`;
+  }).join('');
+}
+
+function renderCollectionGoalsExperience() {
+  const container = document.getElementById('collectionGoals');
+  if (!container) return;
+  const library = getCurrentLibrary();
+  const completed = library.filter((game) => Number(game.completionPercent || 0) >= 100 || game.status === 'completed').length;
+  const reviewed = library.filter((game) => Array.isArray(game.reviews) && game.reviews.length).length;
+  const wishlist = getWishlistItems().length;
+  const goals = [
+    ['Build a 25-game collection', library.length, 25],
+    ['Complete 10 games', completed, 10],
+    ['Review 5 games', reviewed, 5],
+    ['Curate a 10-game wishlist', wishlist, 10]
+  ];
+  container.innerHTML = goals.map(([label,value,target]) => {
+    const percent = Math.min(100, Math.round((value / target) * 100));
+    return `<div class="goal-row"><div class="goal-row__label"><span>${escapeHtml(label)}</span><strong>${value}/${target}</strong></div><div class="goal-track" aria-label="${percent}% complete"><span style="width:${percent}%"></span></div></div>`;
+  }).join('');
+}
+
+function renderReviewIntelligenceExperience() {
+  const container = document.getElementById('reviewIntelligence');
+  if (!container) return;
+  const library = getCurrentLibrary();
+  const rated = library.map((game) => ({ game, score: normalizePersonalRating(game) })).filter((entry) => entry.score > 0).sort((a,b) => b.score-a.score);
+  if (!rated.length) {
+    container.innerHTML = '<p>Rate a few games to reveal your strongest genres, hidden preferences, and review patterns.</p>';
+    return;
+  }
+  const average = Math.round(rated.reduce((sum, entry) => sum + entry.score, 0) / rated.length);
+  const taste = deriveTasteProfile();
+  container.innerHTML = `<p><strong>${average}/100 average</strong> across ${rated.length} rated title${rated.length === 1 ? '' : 's'}.</p>
+    <p>Your strongest signal is <strong>${escapeHtml(taste.topGenres[0] || 'variety')}</strong>${taste.topGenres[1] ? `, followed by ${escapeHtml(taste.topGenres[1])}` : ''}.</p>
+    <div class="experience-result__game"><img src="${escapeHtml(validateImageUrl(rated[0].game.image || rated[0].game.coverImage || '') || GAME_COVER_PLACEHOLDER)}" alt=""><div><strong>${escapeHtml(rated[0].game.title || 'Top rated game')}</strong><br><small>Your highest-rated title at ${rated[0].score}/100.</small></div></div>`;
+}
+
+function renderGamingWrappedExperience() {
+  const container = document.getElementById('gamingWrappedPreview');
+  if (!container) return;
+  const library = getCurrentLibrary();
+  const completed = library.filter((game) => Number(game.completionPercent || 0) >= 100 || game.status === 'completed').length;
+  const playtime = Math.round(library.reduce((sum, game) => sum + Number(game.playtimeHours || game.hoursPlayed || 0), 0));
+  const taste = deriveTasteProfile();
+  const stats = [[library.length,'games tracked'],[completed,'completed'],[playtime,'hours logged'],[taste.topGenres[0] || 'Explorer','top genre']];
+  container.innerHTML = stats.map(([value,label]) => `<div class="wrapped-stat"><strong>${escapeHtml(String(value))}</strong><span>${escapeHtml(label)}</span></div>`).join('');
+}
+
+function renderCommunityPulseExperience() {
+  const container = document.getElementById('communityPulse');
+  if (!container) return;
+  const items = activityItems.slice(0, 3);
+  if (!items.length) {
+    container.innerHTML = '<p>Your community pulse will appear here when you and your friends add games, finish titles, and post reviews.</p>';
+    return;
+  }
+  container.innerHTML = items.map((entry) => `<div class="pulse-item"><span class="pulse-dot" aria-hidden="true"></span><div><strong>${escapeHtml(entry.actorDisplayName || entry.actor || entry.username || 'A player')}</strong><br><small>${escapeHtml(entry.summary || entry.message || entry.type || 'updated their collection')}</small></div></div>`).join('');
+}
+
+function pickBacklogGame(minutes) {
+  const candidates = getCurrentLibrary().filter((game) => Number(game.completionPercent || 0) < 100 && game.status !== 'completed');
+  if (!candidates.length) return null;
+  return [...candidates].sort((a,b) => {
+    const aScore = normalizePersonalRating(a) + (minutes <= 60 ? Number(a.completionPercent || 0) : 0);
+    const bScore = normalizePersonalRating(b) + (minutes <= 60 ? Number(b.completionPercent || 0) : 0);
+    return bScore-aScore;
+  })[0];
+}
+
+function renderAllBetaExperiences() {
+  renderForYouExperience();
+  renderCollectionGoalsExperience();
+  renderReviewIntelligenceExperience();
+  renderGamingWrappedExperience();
+  renderCommunityPulseExperience();
+}
+
+function initializeBetaExperienceControls() {
+  if (document.documentElement.dataset.betaExperienceReady === 'true') return;
+  document.documentElement.dataset.betaExperienceReady = 'true';
+  document.getElementById('refreshForYouButton')?.addEventListener('click', () => renderForYouExperience(true));
+  document.addEventListener('click', (event) => {
+    const recommendation = event.target.closest('[data-for-you-id]');
+    if (recommendation) {
+      const id = recommendation.dataset.forYouId;
+      const item = [...releaseCalendarData, ...GAME_CATALOG].find((entry) => String(entry.id || '') === String(id));
+      if (item) {
+        const release = findReleaseById(id);
+        if (release) window.location.hash = `#upcoming/${encodeURIComponent(id)}`;
+        else showCatalogDetail(item);
+      }
+      return;
+    }
+    const session = event.target.closest('[data-session-minutes]');
+    if (session) {
+      const minutes = Number(session.dataset.sessionMinutes || 60);
+      const game = pickBacklogGame(minutes);
+      const result = document.getElementById('backlogPlannerResult');
+      if (!result) return;
+      result.innerHTML = game ? `<div class="experience-result__game"><img src="${escapeHtml(validateImageUrl(game.image || game.coverImage || '') || GAME_COVER_PLACEHOLDER)}" alt=""><div><strong>${escapeHtml(game.title || 'Backlog pick')}</strong><br><small>Recommended for your ${minutes >= 240 ? 'long' : `${minutes}-minute`} session.</small></div></div>` : '<p>Add an unfinished game to your library to create a session plan.</p>';
+      return;
+    }
+    const quick = event.target.closest('[data-quick-list]');
+    if (quick) {
+      const mode = quick.dataset.quickList;
+      const library = getCurrentLibrary();
+      let picks = [];
+      if (mode === 'favorites') picks = [...library].sort((a,b) => normalizePersonalRating(b)-normalizePersonalRating(a)).slice(0,5);
+      else if (mode === 'weekend') picks = library.filter((game) => Number(game.completionPercent || 0) < 100).slice(0,5);
+      else picks = [...library].filter((game) => normalizePersonalRating(game) >= 75).sort(() => Math.random()-.5).slice(0,5);
+      document.getElementById('quickListResult').innerHTML = picks.length ? `<p><strong>${picks.map((game) => escapeHtml(game.title)).join(' • ')}</strong></p>` : '<p>Add and rate more games to generate this collection.</p>';
+    }
+  });
+  document.getElementById('shareWrappedButton')?.addEventListener('click', async () => {
+    const library = getCurrentLibrary();
+    const completed = library.filter((game) => Number(game.completionPercent || 0) >= 100 || game.status === 'completed').length;
+    const summary = `My Project Sora stats: ${library.length} games tracked, ${completed} completed, favorite genre: ${deriveTasteProfile().topGenres[0] || 'still exploring'}.`;
+    try { await navigator.clipboard.writeText(summary); betaToast('Gaming Wrapped summary copied.'); }
+    catch { betaToast(summary); }
+  });
+}
+
 void initializeApp().then(() => {
+  initializeBetaExperienceControls();
+  renderAllBetaExperiences();
   const match = window.location.hash.match(/^#profile\/(.+)$/);
   if (match) {
     void showProfilePreview(decodeURIComponent(match[1]));
