@@ -17,6 +17,28 @@ const API_BASE = '';
 const REMEMBER_ME_KEY = 'gamevault-remember-me';
 const AUTH_SESSION_KEY = 'gamevault-auth-session';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 8;
+const GAME_IMAGE_FALLBACK = '/icons/game-cover-placeholder.svg';
+
+function decodeHtmlEntities(value = '') {
+  const textarea = document.createElement('textarea');
+  textarea.innerHTML = String(value);
+  return textarea.value;
+}
+
+function installGlobalImageFallback() {
+  document.addEventListener('error', (event) => {
+    const image = event.target;
+    if (!(image instanceof HTMLImageElement)) return;
+    if (image.dataset.fallbackApplied === 'true') return;
+
+    image.dataset.fallbackApplied = 'true';
+    image.classList.add('image-fallback');
+    image.removeAttribute('srcset');
+    image.src = GAME_IMAGE_FALLBACK;
+  }, true);
+}
+
+installGlobalImageFallback();
 
 const usernameInput = document.getElementById('username');
 const switchUserButton = document.getElementById('switchUser');
@@ -237,6 +259,17 @@ const profileDisplayNameInput = document.getElementById('profileDisplayNameInput
 const profileBioInput = document.getElementById('profileBioInput');
 const profileAvatarUrlInput = document.getElementById('profileAvatarUrlInput');
 const profileBannerUrlInput = document.getElementById('profileBannerUrlInput');
+const PLATFORM_ACCOUNT_META = {
+  steam: { label: 'Steam', symbol: 'ST' },
+  xbox: { label: 'Xbox', symbol: 'XB' },
+  playstation: { label: 'PlayStation', symbol: 'PS' },
+  nintendo: { label: 'Nintendo', symbol: 'NI' }
+};
+const platformAccountInputs = Object.fromEntries(Object.keys(PLATFORM_ACCOUNT_META).map((platform) => [platform, {
+  handle: document.getElementById(`${platform}HandleInput`),
+  profileUrl: document.getElementById(`${platform}ProfileUrlInput`),
+  visibility: document.getElementById(`${platform}VisibilitySelect`)
+}]));
 const favoriteGamesEditor = document.getElementById('favoriteGamesEditor');
 const saveProfileButton = document.getElementById('saveProfileButton');
 const viewOwnProfileButton = document.getElementById('viewOwnProfileButton');
@@ -640,9 +673,9 @@ function renderReleaseCalendar() {
   const hero = items[safeHeroIndex] || items[0];
   const remaining = items.filter((item) => item.title !== hero.title).slice(0, 3);
 
-  const heroImage = escapeHtml(hero.image || '');
+  const heroImage = escapeHtml(hero.image || GAME_IMAGE_FALLBACK);
   const heroTitle = escapeHtml(hero.title || 'Featured release');
-  const heroBlurb = escapeHtml(hero.blurb || hero.title || 'Featured release');
+  const heroBlurb = escapeHtml(decodeHtmlEntities(hero.blurb || hero.title || 'Featured release'));
   const heroGenre = escapeHtml(hero.genre || 'Game');
   const heroPlatform = escapeHtml(hero.platform || 'PC / Console');
   const heroRelease = escapeHtml(hero.release || 'Upcoming');
@@ -652,11 +685,11 @@ function renderReleaseCalendar() {
     const itemGenre = escapeHtml(item.genre || 'Game');
     const itemPlatform = escapeHtml(item.platform || 'PC / Console');
     const itemRelease = escapeHtml(item.release || 'Upcoming');
-    const itemImage = escapeHtml(item.image || '');
+    const itemImage = escapeHtml(item.image || GAME_IMAGE_FALLBACK);
     return `
       <article class="release-list-card">
         <div class="release-list-card__image-wrap">
-          <img src="${itemImage}" alt="${itemTitle}" />
+          <img src="${itemImage}" alt="${itemTitle}" loading="lazy" decoding="async" />
         </div>
         <div class="release-list-card__body">
           <div class="release-list-card__header">
@@ -676,7 +709,7 @@ function renderReleaseCalendar() {
   container.innerHTML = `
     <div class="release-hero" role="group" aria-roledescription="carousel" aria-label="Upcoming releases carousel" aria-live="polite">
       <div class="release-hero__image">
-        <img src="${heroImage}" alt="${heroTitle}" />
+        <img src="${heroImage}" alt="${heroTitle}" loading="eager" decoding="async" fetchpriority="high" />
       </div>
       <div class="release-hero__body">
         <div class="release-hero__eyebrow">Featured release</div>
@@ -2020,6 +2053,7 @@ function populateProfileEditor(profile = {}) {
   if (profileBioInput) profileBioInput.value = currentProfileSettings.bio;
   if (profileAvatarUrlInput) profileAvatarUrlInput.value = currentProfileSettings.avatarUrl;
   if (profileBannerUrlInput) profileBannerUrlInput.value = currentProfileSettings.bannerUrl;
+  Object.entries(platformAccountInputs).forEach(([platform, inputs]) => { const account = currentProfileSettings.platformAccounts?.[platform] || {}; if (inputs.handle) inputs.handle.value = account.handle || ''; if (inputs.profileUrl) inputs.profileUrl.value = account.profileUrl || ''; if (inputs.visibility) inputs.visibility.value = account.visibility || 'Public'; });
   updateCompactAccountCard();
   renderFavoriteGamesEditor(currentProfileSettings.favoriteGameIds);
 }
@@ -2033,7 +2067,8 @@ function collectProfileEditorData() {
     bio: String(profileBioInput?.value || '').trim(),
     avatarUrl: String(profileAvatarUrlInput?.value || '').trim(),
     bannerUrl: String(profileBannerUrlInput?.value || '').trim(),
-    favoriteGameIds
+    favoriteGameIds,
+    platformAccounts: Object.fromEntries(Object.entries(platformAccountInputs).map(([platform, inputs]) => [platform, { handle: String(inputs.handle?.value || '').trim(), profileUrl: String(inputs.profileUrl?.value || '').trim(), visibility: inputs.visibility?.value || 'Public' }]))
   };
 }
 
@@ -2097,6 +2132,14 @@ function renderPublicProfilePage(response) {
   const profile = response?.profile || {};
   const libraryItems = Array.isArray(response?.library?.items) ? response.library.items : [];
   const favoriteGames = Array.isArray(profile.favoriteGames) ? profile.favoriteGames : [];
+  const platformAccounts = profile.platformAccounts && typeof profile.platformAccounts === 'object' ? profile.platformAccounts : {};
+  const platformBadgesMarkup = Object.entries(platformAccounts).map(([platform, account]) => {
+    const meta = PLATFORM_ACCOUNT_META[platform];
+    if (!meta || !account?.linked) return '';
+    const label = `${meta.label}${account.handle ? `: ${account.handle}` : ''}`;
+    const content = `<span class="platform-badge platform-badge--${platform}" title="Self-reported linked account"><span class="platform-badge__symbol">${meta.symbol}</span><span>${escapeHtml(label)}</span></span>`;
+    return account.profileUrl ? `<a class="platform-badge-link" href="${escapeHtml(account.profileUrl)}" target="_blank" rel="noopener noreferrer">${content}</a>` : content;
+  }).join('');
   const completedCount = libraryItems.filter((game) => game.status === 'Completed').length;
   const totalPlaytime = libraryItems.reduce((sum, game) => sum + Number(game.playtimeMinutes || 0), 0);
   const bannerStyle = profile.bannerUrl ? ` style="background-image: linear-gradient(rgba(2,6,23,.18), rgba(2,6,23,.72)), url('${escapeHtml(profile.bannerUrl)}')"` : '';
@@ -2116,7 +2159,7 @@ function renderPublicProfilePage(response) {
           ${avatarMarkup}
           <div><h3 class="public-profile-name">${escapeHtml(profile.displayName || profile.handle || 'Project Sora User')}</h3><p class="public-profile-handle">@${escapeHtml(profile.handle || 'user')}</p></div>
         </div>
-        <p class="public-profile-bio">${escapeHtml(profile.bio || 'This player has not added a bio yet.')}</p>
+        <div class="platform-badges" aria-label="Linked gaming platforms">${platformBadgesMarkup || '<span class="platform-badges-empty">No linked gaming accounts yet.</span>'}</div><p class="public-profile-bio">${escapeHtml(profile.bio || 'This player has not added a bio yet.')}</p>
         <div class="public-profile-stats">
           <div class="public-profile-stat"><span>Games</span><strong>${response?.library?.available ? libraryItems.length : 'Private'}</strong></div>
           <div class="public-profile-stat"><span>Completed</span><strong>${response?.library?.available ? completedCount : 'Private'}</strong></div>

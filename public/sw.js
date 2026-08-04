@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'project-sora-v8';
+const CACHE_VERSION = 'project-sora-v9';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -8,7 +8,8 @@ const PRECACHE_URLS = [
   '/manifest.webmanifest',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
-  '/icons/maskable-512.png'
+  '/icons/maskable-512.png',
+  '/icons/game-cover-placeholder.svg'
 ];
 
 function isPrivateOrDynamic(url) {

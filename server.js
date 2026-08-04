@@ -898,6 +898,48 @@ function sanitizeProfileImageUrl(value) {
   }
 }
 
+
+const PLATFORM_ACCOUNT_KEYS = ['steam', 'xbox', 'playstation', 'nintendo'];
+const PLATFORM_VISIBILITIES = new Set(['Public', 'Friends Only', 'Private']);
+
+function sanitizePlatformAccount(platform, value) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const handle = String(source.handle || '').trim().slice(0, 64);
+  let profileUrl = '';
+  const candidate = String(source.profileUrl || '').trim();
+  if (candidate) {
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.protocol === 'https:') profileUrl = candidate.slice(0, 500);
+    } catch {}
+  }
+  const visibility = PLATFORM_VISIBILITIES.has(source.visibility) ? source.visibility : 'Public';
+  return {
+    platform,
+    handle,
+    profileUrl,
+    visibility,
+    linked: Boolean(handle || profileUrl),
+    verificationStatus: 'self-reported',
+    updatedAt: String(source.updatedAt || new Date().toISOString())
+  };
+}
+
+function sanitizePlatformAccounts(value) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  return Object.fromEntries(PLATFORM_ACCOUNT_KEYS.map((platform) => [platform, sanitizePlatformAccount(platform, source[platform])]));
+}
+
+function filterVisiblePlatformAccounts(accounts, isOwner, isFriend) {
+  const sanitized = sanitizePlatformAccounts(accounts);
+  return Object.fromEntries(Object.entries(sanitized).filter(([, account]) => {
+    if (!account.linked) return false;
+    if (isOwner) return true;
+    if (account.visibility === 'Public') return true;
+    return account.visibility === 'Friends Only' && isFriend;
+  }));
+}
+
 function sanitizeProfileDetails(value) {
   const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const favoriteGameIds = [...new Set((Array.isArray(source.favoriteGameIds) ? source.favoriteGameIds : [])
@@ -909,6 +951,7 @@ function sanitizeProfileDetails(value) {
     avatarUrl: sanitizeProfileImageUrl(source.avatarUrl),
     bannerUrl: sanitizeProfileImageUrl(source.bannerUrl),
     favoriteGameIds,
+    platformAccounts: sanitizePlatformAccounts(source.platformAccounts),
     updatedAt: String(source.updatedAt || new Date().toISOString())
   };
 }
@@ -1851,6 +1894,9 @@ function createServer() {
 
     const profiles = readJson(PROFILES_FILE, {});
     const profileDetails = sanitizeProfileDetails(profiles[ownerEmail] || {});
+    const isOwner = String(username || '').trim().toLowerCase() === String(ownerEmail || '').trim().toLowerCase();
+    const isFriend = username ? areUsersFriends(friendStore, ownerEmail, username) : false;
+    const visiblePlatformAccounts = filterVisiblePlatformAccounts(profileDetails.platformAccounts, isOwner, isFriend);
     const libraries = sanitizeUserStore(readJson(LIBRARIES_FILE, {}));
     const libraryItems = sanitizeLibraryPayloadForProfile(libraries[ownerEmail] || []);
     const reviewItems = sanitizeReviewsPayloadForProfile(
@@ -1865,12 +1911,13 @@ function createServer() {
         available: true,
         handle: ownerRecord?.publicHandle || createPublicHandle(ownerEmail),
         id: ownerRecord?.publicId || '',
-        isOwner: String(username || '').trim().toLowerCase() === String(ownerEmail || '').trim().toLowerCase(),
+        isOwner,
         displayName: profileDetails.displayName || ownerRecord?.publicHandle || createPublicHandle(ownerEmail),
         bio: profileDetails.bio,
         avatarUrl: profileDetails.avatarUrl,
         bannerUrl: profileDetails.bannerUrl,
-        favoriteGames: serializeFavoriteGames(profileDetails.favoriteGameIds)
+        favoriteGames: serializeFavoriteGames(profileDetails.favoriteGameIds),
+        platformAccounts: visiblePlatformAccounts
       },
       library: {
         available: libraryAccess.available,

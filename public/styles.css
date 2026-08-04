@@ -1765,3 +1765,30 @@ button:hover {
 @keyframes finder-button-no{0%,100%{transform:translateX(0)}30%{transform:translateX(-5px) rotate(-2deg)}65%{transform:translateX(5px) rotate(2deg)}}
 @keyframes finder-button-yes{0%,100%{transform:scale(1)}45%{transform:scale(1.12)}}
 @media(prefers-reduced-motion:reduce){.game-finder-reaction,.game-finder-reaction-icon,.game-finder-action--pass:active,.game-finder-action--like:active,.game-finder-action--strong:active{animation:none!important}.game-finder-reaction{opacity:1}.game-finder-reaction-icon{transform:none}}
+
+/* Reliable artwork fallbacks */
+img.image-fallback {
+  object-fit: cover;
+  background: #0b172b;
+}
+
+.release-hero__image img,
+.release-list-card__image-wrap img,
+.game-finder-cover,
+.detail-cover,
+.favorite-game-card img {
+  transition: opacity 180ms ease;
+}
+
+/* Connected gaming accounts */
+.connected-accounts-editor{margin-top:1rem;padding-top:1rem;border-top:1px solid rgba(148,163,184,.18)}
+.connected-accounts-heading h3{margin:0 0 .25rem}.connected-accounts-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem}
+.platform-link-editor{display:grid;gap:.5rem;padding:.8rem;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:rgba(15,23,42,.55)}
+.platform-link-editor strong{font-size:.95rem}.platform-link-editor input,.platform-link-editor select{width:100%}
+.platform-badges{display:flex;flex-wrap:wrap;gap:.55rem;margin:.7rem 0 1rem}.platform-badge-link{text-decoration:none}
+.platform-badge{display:inline-flex;align-items:center;gap:.45rem;padding:.42rem .68rem;border:1px solid rgba(255,255,255,.16);border-radius:999px;background:rgba(15,23,42,.82);color:#fff;font-size:.82rem;font-weight:700;transition:transform .16s ease,border-color .16s ease}
+.platform-badge-link:hover .platform-badge{transform:translateY(-1px);border-color:rgba(52,211,153,.65)}
+.platform-badge__symbol{display:grid;place-items:center;min-width:1.7rem;height:1.7rem;border-radius:50%;font-size:.66rem;background:rgba(255,255,255,.12)}
+.platform-badge--steam .platform-badge__symbol{background:#17365d}.platform-badge--xbox .platform-badge__symbol{background:#107c10}.platform-badge--playstation .platform-badge__symbol{background:#006fcd}.platform-badge--nintendo .platform-badge__symbol{background:#e60012}
+.platform-badges-empty{color:var(--muted,#94a3b8);font-size:.88rem}
+@media(max-width:720px){.connected-accounts-grid{grid-template-columns:1fr}.platform-badge{font-size:.76rem}}

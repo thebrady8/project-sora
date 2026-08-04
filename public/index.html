@@ -142,6 +142,15 @@
                     <div id="favoriteGamesEditor" class="favorite-games-editor"></div>
                     <p class="section-caption">Choose up to five games from the Project Sora catalog.</p>
                   </div>
+                  <section class="connected-accounts-editor" aria-labelledby="connectedAccountsHeading">
+                    <div class="connected-accounts-heading"><div><h3 id="connectedAccountsHeading">Connected gaming accounts</h3><p class="section-caption">Add public profile identifiers only. Project Sora never asks for platform passwords.</p></div></div>
+                    <div class="connected-accounts-grid">
+                      <div class="platform-link-editor" data-platform="steam"><strong>Steam</strong><input id="steamHandleInput" type="text" maxlength="64" placeholder="Steam name or SteamID" aria-label="Steam name or SteamID" /><input id="steamProfileUrlInput" type="url" placeholder="https://steamcommunity.com/id/..." aria-label="Steam profile URL" /><select id="steamVisibilitySelect" aria-label="Steam badge visibility"><option>Public</option><option>Friends Only</option><option>Private</option></select></div>
+                      <div class="platform-link-editor" data-platform="xbox"><strong>Xbox</strong><input id="xboxHandleInput" type="text" maxlength="64" placeholder="Xbox gamertag" aria-label="Xbox gamertag" /><input id="xboxProfileUrlInput" type="url" placeholder="Optional HTTPS profile URL" aria-label="Xbox profile URL" /><select id="xboxVisibilitySelect" aria-label="Xbox badge visibility"><option>Public</option><option>Friends Only</option><option>Private</option></select></div>
+                      <div class="platform-link-editor" data-platform="playstation"><strong>PlayStation</strong><input id="playstationHandleInput" type="text" maxlength="64" placeholder="PSN Online ID" aria-label="PlayStation Network Online ID" /><input id="playstationProfileUrlInput" type="url" placeholder="Optional HTTPS profile URL" aria-label="PlayStation profile URL" /><select id="playstationVisibilitySelect" aria-label="PlayStation badge visibility"><option>Public</option><option>Friends Only</option><option>Private</option></select></div>
+                      <div class="platform-link-editor" data-platform="nintendo"><strong>Nintendo</strong><input id="nintendoHandleInput" type="text" maxlength="64" placeholder="Nintendo nickname or friend code" aria-label="Nintendo nickname or friend code" /><input id="nintendoProfileUrlInput" type="url" placeholder="Optional HTTPS profile URL" aria-label="Nintendo profile URL" /><select id="nintendoVisibilitySelect" aria-label="Nintendo badge visibility"><option>Public</option><option>Friends Only</option><option>Private</option></select></div>
+                    </div>
+                  </section>
                   <button id="saveProfileButton" type="button">Save profile</button>
                   <div id="profileEditorStatus" class="beta-download-status" role="status" aria-live="polite">Profile customization is ready.</div>
                 </div></details>
