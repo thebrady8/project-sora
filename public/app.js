@@ -369,6 +369,7 @@ let releaseRotationTimer = null;
 let releaseAutoRotateEnabled = true;
 let releasePlatformSelection = 'All';
 let releaseFeedUpdatedAt = '';
+let releaseRefreshPromise = null;
 let currentReleaseDetailId = '';
 const RELEASE_INTEREST_KEY = 'project-sora-release-interests';
 
@@ -997,23 +998,54 @@ function initializeReleaseCarouselControls() {
 }
 
 async function refreshReleaseCalendar() {
-  const container = document.getElementById('upcomingReleaseRotator');
-  if (!container) {
-    return;
+  if (releaseRefreshPromise) {
+    return releaseRefreshPromise;
   }
 
-  showReleaseCalendarSkeleton();
+  releaseRefreshPromise = (async () => {
+    const container = document.getElementById('upcomingReleaseRotator');
+    if (container) {
+      showReleaseCalendarSkeleton();
+    }
+
+    try {
+      const data = await apiRequest('/api/releases');
+      const liveItems = Array.isArray(data?.items)
+        ? data.items
+        : Array.isArray(data?.releases)
+          ? data.releases
+          : Array.isArray(data)
+            ? data
+            : [];
+      releaseFeedUpdatedAt = String(data?.updatedAt || '');
+      releaseCalendarData = mergeReleaseCalendar(liveItems, PREMIUM_RELEASE_FALLBACK).map(normalizeReleaseEntry);
+    } catch (error) {
+      console.warn('Using fallback release calendar data:', error);
+      releaseCalendarData = sortReleaseDataChronologically([...PREMIUM_RELEASE_FALLBACK]);
+    }
+
+    if (container) {
+      renderReleaseCalendar();
+    }
+
+    if (window.location.hash === '#upcoming/calendar') {
+      renderReleaseCalendarList();
+    } else if (window.location.hash.startsWith('#upcoming/')) {
+      const releaseId = window.location.hash.slice('#upcoming/'.length);
+      const release = findReleaseById(releaseId);
+      if (release) {
+        renderReleaseDetail(release);
+      }
+    }
+
+    return releaseCalendarData;
+  })();
 
   try {
-    const data = await apiRequest('/api/releases');
-    const liveItems = Array.isArray(data?.items) ? data.items : [];
-    releaseFeedUpdatedAt = String(data?.updatedAt || '');
-    releaseCalendarData = mergeReleaseCalendar(liveItems, PREMIUM_RELEASE_FALLBACK).map(normalizeReleaseEntry);
-  } catch {
-    releaseCalendarData = sortReleaseDataChronologically([...PREMIUM_RELEASE_FALLBACK]);
+    return await releaseRefreshPromise;
+  } finally {
+    releaseRefreshPromise = null;
   }
-
-  renderReleaseCalendar();
 }
 
 function startBackgroundRotation() {
@@ -3967,6 +3999,7 @@ function resolveHashRoute() {
 
   if (hash === '#upcoming/calendar') {
     renderReleaseCalendarList();
+    void refreshReleaseCalendar();
     return;
   }
 
@@ -3975,8 +4008,13 @@ function resolveHashRoute() {
     const release = findReleaseById(releaseId);
     if (release) {
       renderReleaseDetail(release);
-      return;
+    } else {
+      void refreshReleaseCalendar().then(() => {
+        const refreshedRelease = findReleaseById(releaseId);
+        if (refreshedRelease) renderReleaseDetail(refreshedRelease);
+      });
     }
+    return;
   }
 
   if (hash === '#statistics') {
