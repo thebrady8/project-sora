@@ -1105,6 +1105,26 @@ function saveUsers(users) {
   localStorage.setItem(STORAGE_KEY, safeStringifyJson(sanitizeUserStore(users)));
 }
 
+function getFriendlyApiError(status, serverMessage = '') {
+  const cleanMessage = String(serverMessage || '').trim();
+  if (cleanMessage && !/internal server error/i.test(cleanMessage)) return cleanMessage;
+
+  const messages = {
+    400: 'Please check the information you entered and try again.',
+    401: 'Please log in to continue.',
+    403: 'You do not have permission to perform that action.',
+    404: 'That item could not be found.',
+    409: 'That information is already in use. Please choose something different.',
+    413: 'That upload is too large.',
+    429: 'Too many requests. Please wait a moment and try again.',
+    500: 'Project Sora ran into a temporary problem. Please try again.',
+    502: 'The service is temporarily unavailable. Please try again shortly.',
+    503: 'The service is temporarily unavailable. Please try again shortly.'
+  };
+
+  return messages[Number(status)] || `Request failed (${status}). Please try again.`;
+}
+
 async function apiRequest(path, options = {}) {
   const requestUrl = new URL(path, window.location.origin);
 
@@ -1126,13 +1146,13 @@ async function apiRequest(path, options = {}) {
     }
 
     if (!response.ok) {
-      throw new Error(data.error || `Request failed (${response.status})`);
+      throw new Error(getFriendlyApiError(response.status, data.error));
     }
 
     return data;
   } catch (error) {
     if (error instanceof TypeError) {
-      throw new Error('Network error while contacting the server.');
+      throw new Error('Unable to reach Project Sora. Check your connection and try again.');
     }
     throw error;
   }
