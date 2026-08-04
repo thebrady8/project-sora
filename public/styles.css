@@ -1792,3 +1792,32 @@ img.image-fallback {
 .platform-badge--steam .platform-badge__symbol{background:#17365d}.platform-badge--xbox .platform-badge__symbol{background:#107c10}.platform-badge--playstation .platform-badge__symbol{background:#006fcd}.platform-badge--nintendo .platform-badge__symbol{background:#e60012}
 .platform-badges-empty{color:var(--muted,#94a3b8);font-size:.88rem}
 @media(max-width:720px){.connected-accounts-grid{grid-template-columns:1fr}.platform-badge{font-size:.76rem}}
+
+
+/* Reliable desktop click and mobile swipe behavior for Upcoming Releases. */
+.release-toolbar button {
+  position: relative;
+  z-index: 5;
+  pointer-events: auto;
+  touch-action: manipulation;
+  cursor: pointer;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.release-toolbar button:focus-visible {
+  outline: 3px solid rgba(56, 189, 248, 0.8);
+  outline-offset: 3px;
+}
+
+.upcoming-release-rotator {
+  touch-action: pan-y pinch-zoom;
+  user-select: none;
+  -webkit-user-select: none;
+  overscroll-behavior-x: contain;
+}
+
+.upcoming-release-rotator img {
+  -webkit-user-drag: none;
+  user-drag: none;
+}

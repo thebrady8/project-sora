@@ -787,6 +787,76 @@ function rotateReleaseCalendar(direction) {
   renderReleaseCalendar();
 }
 
+function initializeReleaseCarouselControls() {
+  const rotator = document.getElementById('upcomingReleaseRotator');
+  if (!rotator || rotator.dataset.controlsReady === 'true') {
+    return;
+  }
+
+  rotator.dataset.controlsReady = 'true';
+  let pointerStart = null;
+
+  // Event delegation keeps the desktop controls working even after dynamic re-renders.
+  document.addEventListener('click', (event) => {
+    const previous = event.target.closest('#releasePrevButton');
+    const next = event.target.closest('#releaseNextButton');
+
+    if (previous) {
+      event.preventDefault();
+      rotateReleaseCalendar(-1);
+    } else if (next) {
+      event.preventDefault();
+      rotateReleaseCalendar(1);
+    }
+  });
+
+  rotator.addEventListener('pointerdown', (event) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) {
+      return;
+    }
+
+    pointerStart = {
+      id: event.pointerId,
+      x: event.clientX,
+      y: event.clientY
+    };
+    rotator.setPointerCapture?.(event.pointerId);
+  });
+
+  rotator.addEventListener('pointerup', (event) => {
+    if (!pointerStart || event.pointerId !== pointerStart.id) {
+      return;
+    }
+
+    const deltaX = event.clientX - pointerStart.x;
+    const deltaY = event.clientY - pointerStart.y;
+    pointerStart = null;
+
+    // Keep vertical page scrolling natural; only treat a clear horizontal gesture as a swipe.
+    if (Math.abs(deltaX) < 55 || Math.abs(deltaX) <= Math.abs(deltaY)) {
+      return;
+    }
+
+    rotateReleaseCalendar(deltaX < 0 ? 1 : -1);
+  });
+
+  const cancelPointer = () => {
+    pointerStart = null;
+  };
+  rotator.addEventListener('pointercancel', cancelPointer);
+  rotator.addEventListener('lostpointercapture', cancelPointer);
+
+  rotator.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      rotateReleaseCalendar(-1);
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      rotateReleaseCalendar(1);
+    }
+  });
+}
+
 async function refreshReleaseCalendar() {
   const container = document.getElementById('upcomingReleaseRotator');
   if (!container) {
@@ -4300,14 +4370,7 @@ async function initializeApp() {
       renderReleaseCalendar();
     });
     startReleaseCalendarRotation();
-
-    if (releasePrevButton) {
-      releasePrevButton.addEventListener('click', () => rotateReleaseCalendar(-1));
-    }
-
-    if (releaseNextButton) {
-      releaseNextButton.addEventListener('click', () => rotateReleaseCalendar(1));
-    }
+    initializeReleaseCarouselControls();
 
     renderLibrary();
     renderWishlistView();
