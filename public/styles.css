@@ -458,21 +458,88 @@ body.menu-open .side-menu {
 .background-rotator {
   position: fixed;
   inset: 0;
-  background-size: cover;
-  background-position: center center;
-  background-repeat: no-repeat;
+  display: grid;
+  grid-template-columns: 1.05fr 0.9fr 1.05fr;
+  grid-template-rows: 1fr 1fr;
+  gap: clamp(8px, 1vw, 18px);
+  padding: clamp(10px, 1.5vw, 28px);
   opacity: 0;
-  filter: saturate(1.18) contrast(1.08) brightness(0.86);
-  transform: scale(1.03);
-  transition: opacity 1400ms cubic-bezier(0.22, 1, 0.36, 1), transform 1400ms cubic-bezier(0.22, 1, 0.36, 1), filter 1400ms ease;
-  will-change: opacity, transform, filter;
+  transform: scale(1.015);
+  transition: opacity 1600ms cubic-bezier(0.22, 1, 0.36, 1), transform 1600ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.background-rotator::before,
+.background-rotator::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
   pointer-events: none;
 }
 
+.background-rotator::before {
+  background:
+    linear-gradient(90deg, rgba(2, 6, 23, 0.9) 0%, rgba(2, 6, 23, 0.25) 48%, rgba(2, 6, 23, 0.78) 100%),
+    linear-gradient(180deg, rgba(2, 6, 23, 0.32) 0%, rgba(2, 6, 23, 0.84) 100%);
+}
+
+.background-rotator::after {
+  background: radial-gradient(circle at 50% 30%, transparent 0%, rgba(2, 6, 23, 0.18) 48%, rgba(2, 6, 23, 0.78) 100%);
+}
+
 .background-rotator.is-active {
-  opacity: 0.24;
+  opacity: 0.48;
   transform: scale(1);
-  filter: saturate(1.22) contrast(1.12) brightness(0.9);
+}
+
+.background-cover-panel {
+  min-width: 0;
+  min-height: 0;
+  border-radius: clamp(14px, 1.4vw, 24px);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  box-shadow: 0 18px 70px rgba(0, 0, 0, 0.42);
+  filter: saturate(1.12) contrast(1.06) brightness(0.78);
+  transform: translateZ(0);
+}
+
+.background-cover-panel--1,
+.background-cover-panel--6 {
+  background-position: center 25%;
+}
+
+.background-cover-panel--2,
+.background-cover-panel--5 {
+  background-position: center;
+}
+
+.background-cover-panel--3,
+.background-cover-panel--4 {
+  background-position: center 35%;
+}
+
+@media (max-width: 760px) {
+  .background-rotator {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: repeat(3, 1fr);
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .background-rotator.is-active {
+    opacity: 0.4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .background-rotator {
+    transition-duration: 1ms;
+    transform: none;
+  }
 }
 
 .app-shell {

@@ -91,5 +91,5 @@ npm run import:open-barcodes
 The importer validates GTIN checksums, requires an exact normalized title match and compatible platform, records provenance, and rejects ambiguous matches. It writes detailed reports to `reports/`. No barcode is generated or guessed.
 
 
-## Email verification
-Profile access is locked until a user enters a six-digit verification code. Configure `RESEND_API_KEY` and `EMAIL_FROM` in Render. In non-production development without SMTP, the verification code is printed to the server console and returned to the local UI.
+## Account access
+Accounts are created without an email verification-code requirement in this beta build. Users can sign in immediately after registration. Do not add platform passwords, API keys, or other secrets to profile fields or commit them to the repository.

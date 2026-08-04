@@ -8,5 +8,6 @@ assert.match(app, /let releaseRefreshPromise = null;/, 'release refreshes should
 assert.match(app, /if \(window\.location\.hash === '#upcoming\/calendar'\) \{\s*renderReleaseCalendarList\(\);/s, 'calendar page should rerender after the API response');
 assert.match(app, /void refreshReleaseCalendar\(\);/, 'calendar route should request fresh release data');
 assert.doesNotMatch(app, /async function refreshReleaseCalendar\(\) \{\s*const container[\s\S]{0,180}if \(!container\) \{\s*return;/, 'release fetching must not depend on the homepage carousel being present');
-assert.match(sw, /project-sora-upcoming-calendar-v11-data-refresh/, 'service worker cache should be bumped');
+assert.match(sw, /const CACHE_VERSION = 'project-sora-[^']+';/, 'service worker should use a versioned Project Sora cache');
+assert.match(sw, /project-sora-steam-cover-background-v12/, 'service worker cache should include the rotating-cover release bump');
 console.log('Release calendar refresh regression test passed');

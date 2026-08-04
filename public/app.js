@@ -1048,37 +1048,89 @@ async function refreshReleaseCalendar() {
   }
 }
 
-function startBackgroundRotation() {
+function getBackgroundCoverCandidates() {
+  const candidates = [
+    ...releaseCalendarData.map((item) => item.image),
+    ...PREMIUM_RELEASE_FALLBACK.map((item) => item.image),
+    ...GAME_CATALOG.map((game) => game.image)
+  ];
+
+  return [...new Set(candidates.filter((url) => {
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
+      return false;
+    }
+    return !url.includes('game-cover-placeholder');
+  }))];
+}
+
+function preloadSharpBackgroundCover(url) {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.decoding = 'async';
+    image.referrerPolicy = 'no-referrer';
+    image.onload = () => {
+      const longestSide = Math.max(image.naturalWidth, image.naturalHeight);
+      resolve(longestSide >= 700 ? url : null);
+    };
+    image.onerror = () => resolve(null);
+    image.src = url;
+  });
+}
+
+function renderBackgroundCoverSet(layer, covers) {
+  layer.replaceChildren();
+  covers.forEach((cover, index) => {
+    const panel = document.createElement('div');
+    panel.className = `background-cover-panel background-cover-panel--${index + 1}`;
+    panel.style.backgroundImage = `url("${String(cover).replace(/"/g, '%22')}")`;
+    layer.append(panel);
+  });
+}
+
+async function startBackgroundRotation() {
   const rotator = document.getElementById('backgroundRotator');
   const rotatorSecondary = document.getElementById('backgroundRotatorSecondary');
-  if (!rotator || !rotatorSecondary) {
+  if (!rotator || !rotatorSecondary || rotator.dataset.rotationReady === 'true') {
     return;
   }
 
-  const images = GAME_CATALOG.map((game) => game.image).filter(Boolean);
+  rotator.dataset.rotationReady = 'true';
+  const candidates = getBackgroundCoverCandidates();
+  if (!candidates.length) {
+    return;
+  }
+
+  const sample = candidates.slice(0, 40);
+  const checked = await Promise.all(sample.map(preloadSharpBackgroundCover));
+  const sharpCovers = checked.filter(Boolean);
+  const images = sharpCovers.length >= 6 ? sharpCovers : sample;
   if (!images.length) {
     return;
   }
 
-  let currentIndex = 0;
+  let cursor = 0;
   let activeLayer = rotator;
   let upcomingLayer = rotatorSecondary;
 
-  const updateBackground = () => {
-    const nextIndex = (currentIndex + 1) % images.length;
-    upcomingLayer.style.backgroundImage = `url('${images[nextIndex]}')`;
+  const getNextSet = () => {
+    const count = Math.min(6, images.length);
+    const set = Array.from({ length: count }, (_, offset) => images[(cursor + offset) % images.length]);
+    cursor = (cursor + Math.max(2, count - 1)) % images.length;
+    return set;
+  };
+
+  renderBackgroundCoverSet(activeLayer, getNextSet());
+  activeLayer.classList.add('is-active');
+
+  window.setInterval(() => {
+    renderBackgroundCoverSet(upcomingLayer, getNextSet());
     upcomingLayer.classList.add('is-active');
 
     window.setTimeout(() => {
       activeLayer.classList.remove('is-active');
       [activeLayer, upcomingLayer] = [upcomingLayer, activeLayer];
-      currentIndex = nextIndex;
-    }, 100);
-  };
-
-  rotator.style.backgroundImage = `url('${images[currentIndex]}')`;
-  rotator.classList.add('is-active');
-  window.setInterval(updateBackground, 5000);
+    }, 1600);
+  }, 9000);
 }
 
 function refreshGameMatchRecommendations() {

@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'project-sora-upcoming-calendar-v11-data-refresh';
+const CACHE_VERSION = 'project-sora-steam-cover-background-v12';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
