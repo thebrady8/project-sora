@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'project-sora-sprint4-v1';
+const CACHE_VERSION = 'project-sora-sprint4-v2';
 const CACHE_NAME = CACHE_VERSION;
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
@@ -70,7 +70,22 @@ async function staleWhileRevalidate(request) {
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(STATIC_CACHE)
-      .then((cache) => cache.addAll(PRECACHE_URLS))
+      .then(async (cache) => {
+        const results = await Promise.allSettled(
+          PRECACHE_URLS.map(async (url) => {
+            const response = await fetch(url, { cache: 'reload' });
+            if (!response.ok) {
+              throw new Error(`Precache failed for ${url}: ${response.status}`);
+            }
+            await cache.put(url, response);
+          })
+        );
+
+        const failed = results.filter((result) => result.status === 'rejected');
+        if (failed.length) {
+          console.warn(`Project Sora precache skipped ${failed.length} unavailable asset(s).`);
+        }
+      })
       .then(() => self.skipWaiting())
   );
 });

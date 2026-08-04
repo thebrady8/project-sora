@@ -34,5 +34,5 @@ test('server exposes reminder endpoints and frontend renders reminder controls',
 
 test('service worker cache is updated for Sprint 3', () => {
   const sw = fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
-  assert.match(sw, /project-sora-sprint4-v1/);
+  assert.match(sw, /project-sora-sprint4-v2/);
 });

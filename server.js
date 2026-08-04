@@ -1918,9 +1918,15 @@ function isSafeStaticPath(urlPath) {
     'index.html', 'offline.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'helpers.js',
     'catalog-data.js', 'csv-utils.mjs', 'search-utils.mjs', 'catalog-routing.mjs', 'profile-privacy.mjs',
     'profile-privacy.js', 'library-view-utils.mjs', 'play-next-utils.mjs', 'play-next-utils.cjs',
-    'queue-utils.js', 'search-experience.mjs', 'statistics-utils.mjs', 'sw.js', 'favicon.ico'
+    'queue-utils.js', 'search-experience.mjs', 'statistics-utils.mjs',
+    'catalog-detail-utils.mjs', 'catalog-search.mjs',
+    'release-experience.mjs', 'release-trust.mjs', 'release-pipeline.mjs',
+    'sw.js', 'favicon.ico'
   ]);
-  const isAllowedAsset = allowedPublicFiles.has(relativePath) || relativePath.startsWith('icons/');
+  const isAllowedAsset =
+    allowedPublicFiles.has(relativePath) ||
+    relativePath.startsWith('icons/') ||
+    relativePath.startsWith('assets/');
   if (hasExtension) {
     return isAllowedAsset && allowedExtensions.has(extension);
   }
