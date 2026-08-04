@@ -12,7 +12,6 @@
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <title>Project Sora</title>
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -59,37 +58,42 @@
                 </div>
               </div>
 
-              <div class="auth-card auth-card--single">
-                <div class="auth-section">
-                  <h3>Register</h3>
-                  <input id="registerUsername" type="email" placeholder="Email" aria-label="Register email" />
-                  <input id="registerPassword" type="password" placeholder="Password" aria-label="Register password" />
-                  <label class="checkbox-row">
-                    <input id="rememberMe" type="checkbox" />
-                    <span>Remember me on this device</span>
-                  </label>
-                  <button id="registerButton" type="button">Create account</button>
+              <div class="auth-card auth-card--combined" aria-labelledby="authHeading">
+                <div class="auth-mode-switch" role="tablist" aria-label="Account access">
+                  <button id="authLoginMode" type="button" class="auth-mode-button is-active" role="tab" aria-selected="true">Log in</button>
+                  <button id="authRegisterMode" type="button" class="auth-mode-button" role="tab" aria-selected="false">Create account</button>
                 </div>
-
-                <div class="auth-section auth-section--secondary">
-                  <h3>Login</h3>
-                  <input id="loginUsername" type="email" placeholder="Email" aria-label="Login email" />
-                  <input id="loginPassword" type="password" placeholder="Password" aria-label="Login password" />
-                  <label class="checkbox-row">
-                    <input id="rememberMeLogin" type="checkbox" />
-                    <span>Remember me on this device</span>
-                  </label>
-                  <button id="loginButton" type="button">Login</button>
+                <div class="auth-section">
+                  <h3 id="authHeading">Log in to Project Sora</h3>
+                  <input id="authEmail" type="email" placeholder="Email" aria-label="Account email" autocomplete="email" />
+                  <input id="authPassword" type="password" placeholder="Password" aria-label="Account password" autocomplete="current-password" />
+                  <label class="checkbox-row"><input id="rememberMe" type="checkbox" /><span>Remember me on this device</span></label>
+                  <button id="authSubmitButton" type="button">Log in</button>
+                  <p id="authStatus" class="section-caption" role="status" aria-live="polite"></p>
+                </div>
+                <div id="emailVerificationPanel" class="email-verification-panel hidden">
+                  <h3>Verify your email</h3>
+                  <p>Enter the six-digit code sent to your email to unlock your profile.</p>
+                  <input id="emailVerificationCode" type="text" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="000000" aria-label="Six-digit email verification code" />
+                  <div class="actions-row"><button id="verifyEmailButton" type="button">Verify email</button><button id="resendVerificationButton" type="button" class="ghost">Resend code</button></div>
+                  <p id="verificationStatus" class="section-caption" role="status" aria-live="polite"></p>
                 </div>
               </div>
 
               <div class="field-group">
+                <button id="gameFinderNavButton" type="button" class="ghost" aria-label="Open Game Finder">Open Game Finder</button>
                 <button id="statisticsNavButton" type="button" class="ghost" aria-label="Open collection statistics dashboard">Open Statistics</button>
                 <button id="wishlistNavButton" type="button" class="ghost" aria-label="Jump to wishlist">Go to Wishlist</button>
                 <div id="betaDownloadStatus" class="beta-download-status" role="status" aria-live="polite">Beta downloads are currently unavailable.</div>
                 <div id="syncStatus" class="sync-status" role="status" aria-live="polite">Sync status: idle</div>
               </div>
               <div class="summary-grid" id="summaryGrid"></div>
+              <div id="accountProfileCard" class="account-profile-card hidden">
+                <div id="accountAvatar" class="account-profile-avatar">S</div>
+                <div class="account-profile-copy"><strong id="accountDisplayName">Project Sora User</strong><span id="accountHandle">Profile locked</span></div>
+                <span id="accountVerificationBadge" class="verification-badge">Unverified</span>
+                <button id="compactViewProfileButton" type="button" class="ghost">View profile</button>
+              </div>
               <div class="profile-hub">
                 <div class="field-group">
                   <label for="friendInput">Find people</label>
@@ -120,7 +124,36 @@
                     <strong id="profileCompletion">0%</strong>
                   </div>
                 </div>
-                <div class="field-group privacy-panel">
+                <details class="profile-menu-section" id="profileEditorDetails"><summary>Customize profile</summary><div class="field-group profile-editor-panel">
+                  <div class="privacy-panel__header">
+                    <h3>Customize profile</h3>
+                    <button id="viewOwnProfileButton" type="button" class="ghost">View profile</button>
+                  </div>
+                  <label>
+                    Display name
+                    <input id="profileDisplayNameInput" type="text" maxlength="40" placeholder="Your display name" />
+                  </label>
+                  <label>
+                    Bio
+                    <textarea id="profileBioInput" maxlength="280" rows="4" placeholder="Tell other players about yourself"></textarea>
+                  </label>
+                  <label>
+                    Profile picture URL
+                    <input id="profileAvatarUrlInput" type="url" placeholder="https://example.com/avatar.jpg" />
+                  </label>
+                  <label>
+                    Banner image URL
+                    <input id="profileBannerUrlInput" type="url" placeholder="https://example.com/banner.jpg" />
+                  </label>
+                  <div>
+                    <span class="field-label">Top 5 favorite games</span>
+                    <div id="favoriteGamesEditor" class="favorite-games-editor"></div>
+                    <p class="section-caption">Choose up to five games from the Project Sora catalog.</p>
+                  </div>
+                  <button id="saveProfileButton" type="button">Save profile</button>
+                  <div id="profileEditorStatus" class="beta-download-status" role="status" aria-live="polite">Verify your email to unlock profile customization.</div>
+                </div></details>
+                <details class="profile-menu-section"><summary>Privacy controls</summary><div class="field-group privacy-panel">
                   <div class="privacy-panel__header">
                     <h3>Privacy controls</h3>
                     <button id="previewProfileButton" type="button" class="ghost">Preview my profile</button>
@@ -161,7 +194,7 @@
                   <button id="savePrivacyButton" type="button">Save privacy settings</button>
                   <div id="privacyStatus" class="beta-download-status" role="status" aria-live="polite">Privacy settings are not yet saved.</div>
                   <div id="profilePreviewPanel" class="profile-preview-card" aria-live="polite"></div>
-                </div>
+                </div></details>
               </div>
             </section>
 
@@ -169,10 +202,20 @@
               <h2>Add a Game</h2>
               <form id="gameForm" class="game-form">
                 <div class="form-grid">
-                  <label>
+                  <label class="game-title-field">
                     Title
-                    <input id="titleInput" name="title" type="text" placeholder="Example: Final Fantasy VII" required autocomplete="off" />
+                    <input id="titleInput" name="title" type="text" placeholder="Start typing a game title" required autocomplete="off" aria-autocomplete="list" aria-controls="titleSuggestions" />
                     <div id="titleSuggestions" class="suggestions hidden" role="listbox" aria-label="Title suggestions"></div>
+                    <span class="field-help">Choose a suggestion to autofill platform, cover, score, and pricing.</span>
+                  </label>
+                  <label>
+                    Barcode / UPC / EAN
+                    <div class="barcode-input-row">
+                      <input id="barcodeInput" name="barcode" type="text" inputmode="numeric" autocomplete="off" placeholder="Scan or enter barcode" aria-describedby="barcodeStatus" />
+                      <button id="scanBarcodeButton" type="button" class="secondary-button">Scan</button>
+                      <button id="lookupBarcodeButton" type="button" class="secondary-button">Look up</button>
+                    </div>
+                    <span id="barcodeStatus" class="field-help" role="status" aria-live="polite">Camera scanning works on supported mobile browsers over HTTPS.</span>
                   </label>
                   <label>
                     Platform
@@ -192,8 +235,13 @@
                     <input name="purchasePrice" type="number" min="0" step="0.01" placeholder="39.99" required />
                   </label>
                   <label>
+                    Current MSRP ($)
+                    <input id="msrpInput" name="msrp" type="number" min="0" step="0.01" placeholder="69.99" />
+                    <span id="msrpSource" class="field-help">Autofilled from the Project Sora catalog when available; verify before saving.</span>
+                  </label>
+                  <label>
                     Current Value ($)
-                    <input name="currentValue" type="number" min="0" step="0.01" placeholder="59.99" required />
+                    <input id="currentValueInput" name="currentValue" type="number" min="0" step="0.01" placeholder="59.99" required />
                   </label>
                   <label>
                     Metacritic Score
@@ -309,6 +357,37 @@
             <div id="queueContainer" class="queue-panel"></div>
           </section>
 
+          <section id="gameFinderPage" class="card panel wide-panel game-finder-page hidden" aria-labelledby="gameFinderHeading" tabindex="-1">
+            <div class="section-title-row">
+              <div><p class="eyebrow">Discover</p><h2 id="gameFinderHeading">Game Finder</h2><p class="section-caption">Swipe left to pass, right to like, or up for a strong match. Recommendations learn from your library, ratings, completed games, favorite games, and swipe history.</p></div>
+              <button id="closeGameFinderButton" type="button" class="ghost">Back to dashboard</button>
+            </div>
+            <div class="game-finder-layout">
+              <div class="game-finder-deck" aria-live="polite">
+                <div id="gameFinderLoading" class="empty-state hidden">Finding your next game…</div>
+                <article id="gameFinderCard" class="game-finder-card" tabindex="0" aria-label="Game recommendation"></article>
+                <div id="gameFinderEmpty" class="empty-state hidden">No more recommendations match your current preferences. Review passes or reset your preferences to continue.</div>
+              </div>
+              <aside class="game-finder-sidebar">
+                <div class="game-finder-actions" aria-label="Game Finder choices">
+                  <button id="gameFinderPassButton" type="button" class="game-finder-action game-finder-action--pass" aria-label="Not interested">✕<span>Pass</span></button>
+                  <button id="gameFinderUndoButton" type="button" class="game-finder-action" aria-label="Undo previous choice">↶<span>Undo</span></button>
+                  <button id="gameFinderLikeButton" type="button" class="game-finder-action game-finder-action--like" aria-label="Interested">♥<span>Like</span></button>
+                  <button id="gameFinderStrongButton" type="button" class="game-finder-action game-finder-action--strong" aria-label="Strong interest">★<span>Strong</span></button>
+                </div>
+                <div id="gameFinderQuickActions" class="game-finder-quick-actions hidden">
+                  <h3>Great pick</h3><p>What would you like to do with it?</p>
+                  <button type="button" data-finder-quick="wishlist">Add to Wishlist</button>
+                  <button type="button" data-finder-quick="library">Add to Library</button>
+                  <button type="button" data-finder-quick="queue">Add to Play Queue</button>
+                  <button type="button" class="ghost" data-finder-quick="details">View Details</button>
+                </div>
+                <details class="game-finder-history"><summary>Review choices</summary><div class="actions-row"><button id="gameFinderReviewLikesButton" type="button" class="ghost">Likes</button><button id="gameFinderReviewPassesButton" type="button" class="ghost">Passes</button><button id="gameFinderResetButton" type="button" class="danger">Reset</button></div><div id="gameFinderHistoryList" class="friends-list"></div></details>
+                <p class="section-caption">Keyboard: ← pass, → like, ↑ strong interest, Enter details, Backspace undo.</p>
+              </aside>
+            </div>
+          </section>
+
           <section id="statisticsPage" class="card panel wide-panel hidden" aria-labelledby="statisticsHeading">
             <div class="section-title-row">
               <div>
@@ -320,6 +399,14 @@
             <div id="statisticsContent" class="statistics-content"></div>
           </section>
 
+
+          <section id="publicProfilePage" class="card panel wide-panel hidden" aria-labelledby="publicProfileHeading">
+            <div class="section-title-row">
+              <button id="backFromProfileButton" type="button" aria-label="Return to home">← Back</button>
+              <h2 id="publicProfileHeading">User Profile</h2>
+            </div>
+            <div id="publicProfileContent" class="public-profile-content" aria-live="polite"></div>
+          </section>
           <section id="detailPage" class="card panel wide-panel hidden">
             <div class="section-title-row">
               <button id="backToLibrary" type="button" aria-label="Return to library">← Back to library</button>
@@ -336,5 +423,20 @@
     </div>
 
     <script type="module" src="/app.js"></script>
-  </body>
+  
+    <dialog id="barcodeScannerDialog" class="barcode-scanner-dialog" aria-labelledby="barcodeScannerTitle">
+      <div class="barcode-scanner-header">
+        <div>
+          <h2 id="barcodeScannerTitle">Scan game barcode</h2>
+          <p>Center the UPC or EAN inside the camera view.</p>
+        </div>
+        <button id="closeBarcodeScanner" type="button" class="icon-button" aria-label="Close barcode scanner">×</button>
+      </div>
+      <div class="barcode-video-wrap">
+        <video id="barcodeVideo" playsinline muted aria-label="Barcode camera preview"></video>
+        <div class="barcode-scan-frame" aria-hidden="true"></div>
+      </div>
+      <div id="barcodeScannerStatus" class="field-help" role="status" aria-live="polite">Starting camera…</div>
+    </dialog>
+</body>
 </html>

@@ -1,0 +1,6 @@
+{
+  "status": "not-run-in-build-environment",
+  "reason": "The build environment could not reach the Wikidata Query Service. Run npm run import:open-barcodes in Codespaces or another internet-connected environment.",
+  "verifiedBarcodesAdded": 0,
+  "matchingPolicy": "Exact normalized title plus compatible platform; exactly one catalog candidate required. Invalid checksums and ambiguous matches are never imported."
+}

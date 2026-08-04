@@ -54,7 +54,7 @@ function createDataBackup(options = {}) {
   const backupDir = path.join(DATA_DIR, `backup-${timestamp}`);
   fs.mkdirSync(backupDir, { recursive: true });
 
-  const filesToCopy = ['users.json', 'libraries.json', 'wishlists.json', 'queues.json', 'activities.json', 'friends.json', 'catalog.json', 'price-history.json', 'price-alerts.json', 'notifications.json'];
+  const filesToCopy = ['users.json', 'libraries.json', 'wishlists.json', 'queues.json', 'activities.json', 'friends.json', 'catalog.json', 'price-history.json', 'price-alerts.json', 'notifications.json', 'profiles.json'];
   const copiedFiles = [];
   filesToCopy.forEach((fileName) => {
     const sourcePath = path.join(DATA_DIR, fileName);
@@ -292,6 +292,16 @@ function initializeStorage() {
       observed_price REAL,
       UNIQUE(user_email, game_id, target_price, currency)
     )`
+,    `CREATE TABLE IF NOT EXISTS profiles (
+      user_email TEXT PRIMARY KEY REFERENCES users(email) ON DELETE CASCADE,
+      display_name TEXT NOT NULL DEFAULT '',
+      bio TEXT NOT NULL DEFAULT '',
+      avatar_url TEXT NOT NULL DEFAULT '',
+      banner_url TEXT NOT NULL DEFAULT '',
+      favorite_game_ids_json TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`
   ];
 
   const transaction = db.transaction(() => {
@@ -306,6 +316,7 @@ function initializeStorage() {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_price_history_game_id ON price_history(game_id, captured_at)`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_price_alerts_user_game ON price_alerts(user_email, game_id)`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_email, created_at)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_profiles_display_name ON profiles(display_name)`);
   });
 
   transaction();
@@ -955,6 +966,64 @@ function writeNotificationsStore(store) {
   transaction();
 }
 
+
+function readProfilesStore() {
+  const db = initializeStorage();
+  if (!db) {
+    return {};
+  }
+
+  const rows = db.prepare('SELECT * FROM profiles ORDER BY user_email').all();
+  return Object.fromEntries(rows.map((row) => [row.user_email, {
+    displayName: row.display_name || '',
+    bio: row.bio || '',
+    avatarUrl: row.avatar_url || '',
+    bannerUrl: row.banner_url || '',
+    favoriteGameIds: parseJsonField(row.favorite_game_ids_json, []),
+    updatedAt: row.updated_at || ''
+  }]));
+}
+
+function writeProfilesStore(store) {
+  const db = initializeStorage();
+  if (!db) {
+    return;
+  }
+
+  const statement = db.prepare(`
+    INSERT INTO profiles(user_email, display_name, bio, avatar_url, banner_url, favorite_game_ids_json, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(user_email) DO UPDATE SET
+      display_name = excluded.display_name,
+      bio = excluded.bio,
+      avatar_url = excluded.avatar_url,
+      banner_url = excluded.banner_url,
+      favorite_game_ids_json = excluded.favorite_game_ids_json,
+      updated_at = excluded.updated_at
+  `);
+
+  const transaction = db.transaction(() => {
+    Object.entries(store || {}).forEach(([email, value]) => {
+      const normalizedEmail = String(email || '').trim().toLowerCase();
+      if (!normalizedEmail || !value || typeof value !== 'object' || Array.isArray(value)) {
+        return;
+      }
+      const now = getNowIso();
+      statement.run(
+        normalizedEmail,
+        String(value.displayName || ''),
+        String(value.bio || ''),
+        String(value.avatarUrl || ''),
+        String(value.bannerUrl || ''),
+        JSON.stringify(Array.isArray(value.favoriteGameIds) ? value.favoriteGameIds : []),
+        String(value.createdAt || now),
+        String(value.updatedAt || now)
+      );
+    });
+  });
+  transaction();
+}
+
 function withTransaction(callback) {
   const db = initializeStorage();
   if (!db) {
@@ -1033,7 +1102,7 @@ function backupJsonFiles() {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const backupDir = path.join(DATA_DIR, `json-backup-${timestamp}`);
   fs.mkdirSync(backupDir, { recursive: true });
-  const files = ['users.json', 'libraries.json', 'wishlists.json', 'queues.json', 'activities.json', 'friends.json', 'price-history.json', 'price-alerts.json', 'notifications.json', 'catalog.json'];
+  const files = ['users.json', 'libraries.json', 'wishlists.json', 'queues.json', 'activities.json', 'friends.json', 'price-history.json', 'price-alerts.json', 'notifications.json', 'profiles.json', 'catalog.json'];
   files.forEach((fileName) => {
     const source = path.join(DATA_DIR, fileName);
     if (fs.existsSync(source)) {
@@ -1067,7 +1136,8 @@ function migrateFromJsonFiles() {
     { fileName: 'friends.json', reader: (value) => value, writer: writeFriendStore },
     { fileName: 'price-history.json', reader: (value) => value, writer: writePriceHistoryStore },
     { fileName: 'price-alerts.json', reader: (value) => value, writer: writePriceAlertsStore },
-    { fileName: 'notifications.json', reader: (value) => value, writer: writeNotificationsStore }
+    { fileName: 'notifications.json', reader: (value) => value, writer: writeNotificationsStore },
+    { fileName: 'profiles.json', reader: (value) => value, writer: writeProfilesStore }
   ];
 
   const transaction = db.transaction(() => {
@@ -1122,6 +1192,8 @@ function readJson(filePath, fallback) {
       return readPriceAlertsStore();
     case 'notifications.json':
       return readNotificationsStore();
+    case 'profiles.json':
+      return readProfilesStore();
     default:
       try {
         const raw = fs.readFileSync(filePath, 'utf8');
@@ -1165,6 +1237,8 @@ function writeJson(filePath, value) {
       return writePriceAlertsStore(value);
     case 'notifications.json':
       return writeNotificationsStore(value);
+    case 'profiles.json':
+      return writeProfilesStore(value);
     default:
       try {
         fs.writeFileSync(filePath, JSON.stringify(value, null, 2));
@@ -1207,6 +1281,8 @@ module.exports = {
   writePriceAlertsStore,
   readNotificationsStore,
   writeNotificationsStore,
+  readProfilesStore,
+  writeProfilesStore,
   createFriendship,
   createWishlistEntry,
   createQueueEntry,

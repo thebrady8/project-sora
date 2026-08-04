@@ -58,6 +58,8 @@ export function normalizeGame(game) {
     comments: Array.isArray(safeGame.comments) ? safeGame.comments : [],
     metacriticScore: safeGame.metacriticScore ?? 'N/A',
     coverImage: safeGame.coverImage || '',
+    msrp: Number(safeGame.msrp || 0),
+    barcode: String(safeGame.barcode || '').replace(/[^0-9]/g, ''),
     playtimeMinutes: Number(safeGame.playtimeMinutes || 0),
     completionPercent: Number(safeGame.completionPercent || 0),
     status,

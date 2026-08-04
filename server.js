@@ -14,6 +14,7 @@ const DATA_DIR = storage.DATA_DIR;
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const LIBRARIES_FILE = path.join(DATA_DIR, 'libraries.json');
 const WISHLISTS_FILE = path.join(DATA_DIR, 'wishlists.json');
+const GAME_FINDER_FILE = path.join(DATA_DIR, 'game-finder.json');
 const QUEUES_FILE = path.join(DATA_DIR, 'queues.json');
 const ACTIVITIES_FILE = path.join(DATA_DIR, 'activities.json');
 const FRIENDS_FILE = path.join(DATA_DIR, 'friends.json');
@@ -21,6 +22,9 @@ const CATALOG_FILE = path.join(DATA_DIR, 'catalog.json');
 const PRICE_HISTORY_FILE = path.join(DATA_DIR, 'price-history.json');
 const PRICE_ALERTS_FILE = path.join(DATA_DIR, 'price-alerts.json');
 const NOTIFICATIONS_FILE = path.join(DATA_DIR, 'notifications.json');
+const PROFILES_FILE = path.join(DATA_DIR, 'profiles.json');
+const EMAIL_VERIFICATION_TTL_MS = 1000 * 60 * 15;
+const EMAIL_VERIFICATION_RESEND_MS = 1000 * 60;
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -347,6 +351,9 @@ function ensureDataFiles() {
   if (!fs.existsSync(NOTIFICATIONS_FILE) && storage.getPersistenceMode() === 'JSON') {
     fs.writeFileSync(NOTIFICATIONS_FILE, JSON.stringify({}, null, 2));
   }
+  if (!fs.existsSync(PROFILES_FILE) && storage.getPersistenceMode() === 'JSON') {
+    fs.writeFileSync(PROFILES_FILE, JSON.stringify({}, null, 2));
+  }
 }
 
 function readJson(filePath, fallback) {
@@ -355,6 +362,102 @@ function readJson(filePath, fallback) {
 
 function writeJson(filePath, value) {
   return storage.writeJson(filePath, value);
+}
+
+
+function createVerificationCode() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
+function hashVerificationCode(email, code) {
+  return crypto.createHash('sha256').update(`${String(email).toLowerCase()}:${String(code)}`).digest('hex');
+}
+
+function postJson(urlString, headers, payload) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(urlString);
+    const body = JSON.stringify(payload);
+    const request = https.request({
+      method: 'POST',
+      hostname: target.hostname,
+      port: target.port || 443,
+      path: `${target.pathname}${target.search}`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+        ...headers
+      },
+      timeout: 15000
+    }, (response) => {
+      let responseBody = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => { responseBody += chunk; });
+      response.on('end', () => {
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          resolve(responseBody ? JSON.parse(responseBody) : {});
+          return;
+        }
+        reject(new Error(`Email provider returned ${response.statusCode}.`));
+      });
+    });
+    request.on('timeout', () => request.destroy(new Error('Email provider timed out.')));
+    request.on('error', reject);
+    request.write(body);
+    request.end();
+  });
+}
+
+async function sendVerificationEmail(email, code) {
+  const apiKey = String(process.env.RESEND_API_KEY || '').trim();
+  const from = String(process.env.EMAIL_FROM || '').trim();
+  if (!apiKey || !from) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Email delivery is not configured. Add RESEND_API_KEY and EMAIL_FROM.');
+    }
+    console.info(`[development] Project Sora verification code for ${redactSensitiveString(email)}: ${code}`);
+    return { delivered: false, developmentCode: code };
+  }
+  await postJson('https://api.resend.com/emails', { Authorization: `Bearer ${apiKey}` }, {
+    from,
+    to: [email],
+    subject: 'Verify your Project Sora email',
+    text: `Your Project Sora verification code is ${code}. It expires in 15 minutes.`,
+    html: `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto"><h2>Verify your Project Sora account</h2><p>Enter this code to unlock your profile:</p><p style="font-size:32px;font-weight:700;letter-spacing:8px">${code}</p><p>This code expires in 15 minutes. If you did not create this account, you can ignore this email.</p></div>`
+  });
+  return { delivered: true };
+}
+
+async function issueVerificationCode(users, email) {
+  const user = users[email];
+  if (!user) throw new Error('Account not found.');
+  const now = Date.now();
+  if (Number(user.verificationLastSentAt || 0) + EMAIL_VERIFICATION_RESEND_MS > now) {
+    const waitSeconds = Math.ceil((Number(user.verificationLastSentAt || 0) + EMAIL_VERIFICATION_RESEND_MS - now) / 1000);
+    const error = new Error(`Please wait ${waitSeconds} seconds before requesting another code.`);
+    error.statusCode = 429;
+    throw error;
+  }
+  const code = createVerificationCode();
+  user.verificationCodeHash = hashVerificationCode(email, code);
+  user.verificationExpiresAt = now + EMAIL_VERIFICATION_TTL_MS;
+  user.verificationLastSentAt = now;
+  writeJson(USERS_FILE, users);
+  const delivery = await sendVerificationEmail(email, code);
+  return delivery;
+}
+
+function isEmailVerified(userRecord) {
+  return Boolean(userRecord && String(userRecord.emailVerifiedAt || '').trim());
+}
+
+function ensureEmailVerified(username, res) {
+  const users = sanitizeUserStore(readJson(USERS_FILE, {}));
+  const user = users[username];
+  if (!isEmailVerified(user)) {
+    sendJson(res, 403, { error: 'Verify your email to open and customize your profile.', verificationRequired: true }, res.__requestId);
+    return false;
+  }
+  return true;
 }
 
 function hashPassword(password, salt) {
@@ -818,8 +921,12 @@ function evaluateProfileAccess(ownerEmail, viewerEmail, usersStore, friendStore)
     return { allowed: false, reason: 'This profile is private.' };
   }
 
-  if (!normalizedViewerEmail || normalizedOwnerEmail === normalizedViewerEmail) {
+  if (normalizedOwnerEmail === normalizedViewerEmail) {
     return { allowed: true, reason: null };
+  }
+
+  if (!normalizedViewerEmail) {
+    return { allowed: privacy.profileVisibility === 'Public', reason: 'This profile is private.' };
   }
 
   const isFriend = isUsersFriends(friendStore, ownerRecord.publicId, viewerRecord?.publicId);
@@ -860,6 +967,68 @@ function evaluateSectionAccess(sectionKey, ownerEmail, viewerEmail, usersStore, 
   }
 
   return { available: false, message: sectionKey === 'libraryVisibility' ? 'Library access is restricted by privacy settings.' : sectionKey === 'reviewsVisibility' ? 'Reviews are restricted by privacy settings.' : 'Activity is restricted by privacy settings.' };
+}
+
+
+function sanitizeProfileImageUrl(value) {
+  const candidate = String(value || '').trim();
+  if (!candidate) {
+    return '';
+  }
+  if (candidate.startsWith('/')) {
+    return candidate.slice(0, 500);
+  }
+  try {
+    const parsed = new URL(candidate);
+    return parsed.protocol === 'https:' ? candidate.slice(0, 500) : '';
+  } catch {
+    return '';
+  }
+}
+
+function sanitizeProfileDetails(value) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const favoriteGameIds = [...new Set((Array.isArray(source.favoriteGameIds) ? source.favoriteGameIds : [])
+    .map((entry) => String(entry || '').trim())
+    .filter(Boolean))].slice(0, 5);
+  return {
+    displayName: String(source.displayName || '').trim().slice(0, 40),
+    bio: String(source.bio || '').trim().slice(0, 280),
+    avatarUrl: sanitizeProfileImageUrl(source.avatarUrl),
+    bannerUrl: sanitizeProfileImageUrl(source.bannerUrl),
+    favoriteGameIds,
+    updatedAt: String(source.updatedAt || new Date().toISOString())
+  };
+}
+
+function resolveProfileOwner(usersStore, identifier) {
+  const candidate = decodeURIComponent(String(identifier || '')).trim().toLowerCase();
+  if (!candidate) {
+    return null;
+  }
+  if (usersStore[candidate]) {
+    return candidate;
+  }
+  return Object.keys(usersStore).find((email) => {
+    const record = ensureUserPublicIdentity(usersStore, email);
+    return String(record?.publicHandle || '').toLowerCase() === candidate || String(record?.publicId || '').toLowerCase() === candidate;
+  }) || null;
+}
+
+function serializeFavoriteGames(gameIds) {
+  const catalog = sanitizeCatalog(readJson(CATALOG_FILE, defaultCatalog));
+  return (Array.isArray(gameIds) ? gameIds : []).map((gameId) => {
+    const target = catalog.find((game) => String(game.id || '') === String(gameId || ''));
+    if (!target) {
+      return null;
+    }
+    return {
+      id: String(target.id || ''),
+      title: String(target.name || target.title || ''),
+      platform: String(target.platform || ''),
+      image: String(target.image || target.coverImage || '')
+    };
+  }).filter(Boolean).slice(0, 5);
 }
 
 function normalizeWishlistGameId(value, fallbackTitle = '') {
@@ -1275,6 +1444,10 @@ function sanitizeUserStore(value) {
             sanitizedUser.publicHandle = String(candidate.publicHandle || '').trim();
           }
           sanitizedUser.privacySettings = sanitizePrivacySettings(candidate.privacySettings);
+          sanitizedUser.emailVerifiedAt = String(candidate.emailVerifiedAt || '').trim();
+          sanitizedUser.verificationCodeHash = String(candidate.verificationCodeHash || '').trim();
+          sanitizedUser.verificationExpiresAt = Number(candidate.verificationExpiresAt || 0);
+          sanitizedUser.verificationLastSentAt = Number(candidate.verificationLastSentAt || 0);
           return [String(key), sanitizedUser];
         }
       }
@@ -1573,13 +1746,33 @@ function createServer() {
     return respond(200, { status: 'ok', service: 'project-sora', uptimeMs, ready: true, deployment: 'production' });
   }
 
+
+  if (req.method === 'GET' && url.pathname === '/api/games/barcode') {
+    const code = String(url.searchParams.get('code') || '').replace(/[^0-9]/g, '');
+    if (code.length < 8 || code.length > 14) {
+      return respond(400, { error: 'A valid 8–14 digit UPC or EAN is required' });
+    }
+
+    const catalog = readJson(CATALOG_FILE, defaultCatalog);
+    const game = catalog.find((entry) => {
+      const values = Array.isArray(entry.barcodes) ? entry.barcodes : [entry.barcode];
+      return values.filter(Boolean).some((value) => String(value).replace(/[^0-9]/g, '') === code);
+    });
+
+    if (!game) {
+      return respond(404, { error: 'No game in the Project Sora catalog matches this barcode' });
+    }
+
+    return respond(200, { game: { ...game, msrp: Number(game.msrp ?? game.price ?? 0) } });
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/games') {
     const searchTerm = (url.searchParams.get('search') || '').toLowerCase();
     const catalog = readJson(CATALOG_FILE, defaultCatalog);
     const filtered = !searchTerm
       ? catalog
       : catalog.filter((game) => game.name.toLowerCase().includes(searchTerm));
-    return respond(200, filtered);
+    return respond(200, filtered.map((game) => ({ ...game, msrp: Number(game.msrp ?? game.price ?? 0) })));
   }
 
   if (req.method === 'POST' && url.pathname === '/api/catalog/price-history') {
@@ -1685,14 +1878,40 @@ function createServer() {
     return respond(200, publicHandles);
   }
 
-  if (req.method === 'GET' && url.pathname.startsWith('/api/profile/')) {
+  if (req.method === 'GET' && url.pathname === '/api/profile-settings') {
     const username = ensureAuthenticated(req, res);
-    if (!username) {
-      return;
-    }
+    if (!username) { return; }
+    if (!ensureEmailVerified(username, res)) { return; }
+    const profiles = readJson(PROFILES_FILE, {});
+    return respond(200, { profile: sanitizeProfileDetails(profiles[username] || {}) });
+  }
 
-    const ownerEmail = decodeURIComponent(url.pathname.replace('/api/profile/', ''));
+  if (req.method === 'POST' && url.pathname === '/api/profile-settings') {
+    const username = ensureAuthenticated(req, res);
+    if (!username) { return; }
+    if (!ensureEmailVerified(username, res)) { return; }
+    let body;
+    try {
+      body = await parseBody(req);
+    } catch (error) {
+      return respond(400, { error: error.message || 'Invalid profile data.' });
+    }
+    const profiles = readJson(PROFILES_FILE, {});
+    const profile = sanitizeProfileDetails(body);
+    profiles[username] = profile;
+    writeJson(PROFILES_FILE, profiles);
+    return respond(200, { profile });
+  }
+
+  if (req.method === 'GET' && url.pathname.startsWith('/api/profile/')) {
+    const sessionToken = getBearerToken(req);
+    const username = sessionToken ? getSessionUser(sessionToken) : null;
+    const identifier = url.pathname.replace('/api/profile/', '');
     const users = sanitizeUserStore(readJson(USERS_FILE, {}));
+    const ownerEmail = resolveProfileOwner(users, identifier);
+    if (!ownerEmail) {
+      return respond(404, { error: 'Profile not found.' });
+    }
     const ownerRecord = ensureUserPublicIdentity(users, ownerEmail);
     const friendStore = sanitizeFriendStore(readJson(FRIENDS_FILE, { requests: [], friendships: [] }));
     const profileAccess = evaluateProfileAccess(ownerEmail, username, users, friendStore);
@@ -1704,6 +1923,8 @@ function createServer() {
     const reviewsAccess = evaluateSectionAccess('reviewsVisibility', ownerEmail, username, users, friendStore);
     const activityAccess = evaluateSectionAccess('activityVisibility', ownerEmail, username, users, friendStore);
 
+    const profiles = readJson(PROFILES_FILE, {});
+    const profileDetails = sanitizeProfileDetails(profiles[ownerEmail] || {});
     const libraries = sanitizeUserStore(readJson(LIBRARIES_FILE, {}));
     const libraryItems = sanitizeLibraryPayloadForProfile(libraries[ownerEmail] || []);
     const reviewItems = sanitizeReviewsPayloadForProfile(
@@ -1718,7 +1939,12 @@ function createServer() {
         available: true,
         handle: ownerRecord?.publicHandle || createPublicHandle(ownerEmail),
         id: ownerRecord?.publicId || '',
-        isOwner: String(username || '').trim().toLowerCase() === String(ownerEmail || '').trim().toLowerCase()
+        isOwner: String(username || '').trim().toLowerCase() === String(ownerEmail || '').trim().toLowerCase(),
+        displayName: profileDetails.displayName || ownerRecord?.publicHandle || createPublicHandle(ownerEmail),
+        bio: profileDetails.bio,
+        avatarUrl: profileDetails.avatarUrl,
+        bannerUrl: profileDetails.bannerUrl,
+        favoriteGames: serializeFavoriteGames(profileDetails.favoriteGameIds)
       },
       library: {
         available: libraryAccess.available,
@@ -2093,7 +2319,11 @@ function createServer() {
         passwordHash,
         publicId: createPublicUserId(),
         publicHandle: createPublicHandle(email),
-        privacySettings: sanitizePrivacySettings()
+        privacySettings: sanitizePrivacySettings(),
+        emailVerifiedAt: '',
+        verificationCodeHash: '',
+        verificationExpiresAt: 0,
+        verificationLastSentAt: 0
       };
       writeJson(USERS_FILE, users);
 
@@ -2103,8 +2333,9 @@ function createServer() {
         writeJson(LIBRARIES_FILE, libraries);
       }
 
+      const delivery = await issueVerificationCode(users, email);
       const token = createSession(email);
-      return respond(201, { token, user: email });
+      return respond(201, { token, user: email, emailVerified: false, verificationRequired: true, ...(delivery.developmentCode ? { developmentCode: delivery.developmentCode } : {}) });
     } catch (error) {
       return handleServerError(req, res, error, requestId);
     }
@@ -2135,10 +2366,61 @@ function createServer() {
       }
 
       const token = createSession(email);
-      return respond(200, { token, user: email });
+      return respond(200, { token, user: email, emailVerified: isEmailVerified(userRecord), verificationRequired: !isEmailVerified(userRecord) });
     } catch (error) {
       return handleServerError(req, res, error, requestId);
     }
+  }
+
+
+  if (req.method === 'POST' && url.pathname === '/api/auth/resend-verification') {
+    const username = ensureAuthenticated(req, res);
+    if (!username) return;
+    const users = sanitizeUserStore(readJson(USERS_FILE, {}));
+    if (isEmailVerified(users[username])) return respond(200, { ok: true, emailVerified: true });
+    try {
+      const delivery = await issueVerificationCode(users, username);
+      return respond(200, { ok: true, verificationRequired: true, ...(delivery.developmentCode ? { developmentCode: delivery.developmentCode } : {}) });
+    } catch (error) {
+      return respond(error.statusCode || 503, { error: error.message || 'Unable to send verification code.' });
+    }
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/auth/verify-email') {
+    const username = ensureAuthenticated(req, res);
+    if (!username) return;
+    try {
+      const body = await parseBody(req);
+      const code = String(body.code || '').replace(/\D/g, '').slice(0, 6);
+      if (code.length !== 6) return respond(400, { error: 'Enter the six-digit verification code.' });
+      const users = sanitizeUserStore(readJson(USERS_FILE, {}));
+      const user = users[username];
+      if (!user) return respond(404, { error: 'Account not found.' });
+      if (isEmailVerified(user)) return respond(200, { ok: true, emailVerified: true });
+      if (!user.verificationCodeHash || Number(user.verificationExpiresAt || 0) < Date.now()) {
+        return respond(400, { error: 'This verification code has expired. Request a new code.' });
+      }
+      const expected = Buffer.from(user.verificationCodeHash, 'hex');
+      const actual = Buffer.from(hashVerificationCode(username, code), 'hex');
+      if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
+        return respond(400, { error: 'The verification code is incorrect.' });
+      }
+      user.emailVerifiedAt = new Date().toISOString();
+      user.verificationCodeHash = '';
+      user.verificationExpiresAt = 0;
+      users[username] = user;
+      writeJson(USERS_FILE, users);
+      return respond(200, { ok: true, emailVerified: true });
+    } catch (error) {
+      return handleServerError(req, res, error, requestId);
+    }
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/auth/status') {
+    const username = ensureAuthenticated(req, res);
+    if (!username) return;
+    const users = sanitizeUserStore(readJson(USERS_FILE, {}));
+    return respond(200, { user: username, emailVerified: isEmailVerified(users[username]) });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/logout') {
@@ -2278,6 +2560,53 @@ function createServer() {
     } catch (error) {
       return handleServerError(req, res, error, requestId);
     }
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/game-finder') {
+    const username = ensureAuthenticated(req, res);
+    if (!username) return;
+    const store = readJson(GAME_FINDER_FILE, {});
+    const state = store[username] && typeof store[username] === 'object' ? store[username] : { decisions: [] };
+    return respond(200, { decisions: Array.isArray(state.decisions) ? state.decisions.slice(-1000) : [] });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/game-finder/decision') {
+    const username = ensureAuthenticated(req, res);
+    if (!username) return;
+    try {
+      const body = await parseBody(req);
+      const action = ['pass', 'like', 'strong'].includes(body.action) ? body.action : null;
+      const gameId = String(body.gameId || '').trim().slice(0, 160);
+      const title = String(body.title || '').trim().slice(0, 180);
+      if (!action || !gameId || !title) return respond(400, { error: 'A valid game and decision are required' });
+      const record = {
+        gameId,
+        title,
+        platform: String(body.platform || '').trim().slice(0, 80),
+        image: sanitizeProfileImageUrl(body.image),
+        action,
+        timestamp: new Date().toISOString(),
+        score: Math.max(0, Math.min(1000, Number(body.score || 0)))
+      };
+      const store = readJson(GAME_FINDER_FILE, {});
+      const current = store[username] && typeof store[username] === 'object' ? store[username] : { decisions: [] };
+      const decisions = Array.isArray(current.decisions) ? current.decisions : [];
+      const withoutExisting = decisions.filter((entry) => String(entry.gameId) !== gameId);
+      store[username] = { decisions: [...withoutExisting, record].slice(-1000), updatedAt: new Date().toISOString() };
+      writeJson(GAME_FINDER_FILE, store);
+      return respond(200, { ok: true, decision: record });
+    } catch (error) {
+      return handleServerError(req, res, error, requestId);
+    }
+  }
+
+  if (req.method === 'DELETE' && url.pathname === '/api/game-finder') {
+    const username = ensureAuthenticated(req, res);
+    if (!username) return;
+    const store = readJson(GAME_FINDER_FILE, {});
+    delete store[username];
+    writeJson(GAME_FINDER_FILE, store);
+    return respond(200, { ok: true });
   }
 
   if (req.method === 'GET' && url.pathname === '/api/wishlist') {

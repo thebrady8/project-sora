@@ -10,7 +10,8 @@
     "validate-backup": "node server.js --validate-backup",
     "test": "node --test tests/*.test.js tests/*.test.mjs",
     "syntax-check": "find . -type f \\( -name '*.js' -o -name '*.mjs' \\) ! -path './node_modules/*' | sort | while read -r file; do node --check \"$file\" || exit 1; done",
-    "verify": "npm run syntax-check && npm test"
+    "verify": "npm run syntax-check && npm test",
+    "import:open-barcodes": "node scripts/import-open-barcodes.mjs"
   },
   "engines": {
     "node": ">=20"

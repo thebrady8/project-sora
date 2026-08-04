@@ -65,3 +65,31 @@ Screenshots coming soon.
 ## License
 
 This project is released under the MIT License. Add a `LICENSE` file if you want to publish with explicit license text.
+
+## Enhanced user profiles
+
+Authenticated users can customize a public-facing profile with a display name, short bio, profile picture URL, banner image URL, and up to five favorite games. Public profiles use shareable hash routes such as `#profile/handle` and continue to respect the existing profile and library privacy controls. Image URLs are limited to HTTPS or safe same-origin paths; direct file uploads are not included because free Render instances do not provide durable upload storage.
+
+## Add-to-Library Autofill and Barcode Scanning
+
+The Add a Game form now supports title suggestions, catalog autofill, manual UPC/EAN lookup, and camera barcode scanning in browsers that implement the Barcode Detection API. Selecting a title suggestion fills available platform, cover, Metacritic score, current catalog price, and MSRP fields.
+
+Barcode lookup is catalog-backed: a scanned code will match when a catalog record contains a `barcode` value or a `barcodes` array. Unsupported browsers can still enter a UPC/EAN manually. MSRP and current value are catalog-provided reference values and should be verified for the exact platform, region, and edition before saving.
+
+## Game catalog
+
+This beta build includes **16,500 game/platform records** for title autocomplete and catalog search. Imported records include title, platform, release year, genre, and publisher when available. MSRP, live prices, cover art, critic scores, and barcode identifiers are intentionally left unavailable unless verified by a licensed data source. See `data/CATALOG_SOURCE.md` for provenance and limitations.
+
+## Open barcode enrichment
+
+Project Sora includes a conservative importer for free, no-account barcode data from Wikidata's GTIN property (P3962):
+
+```bash
+npm run import:open-barcodes
+```
+
+The importer validates GTIN checksums, requires an exact normalized title match and compatible platform, records provenance, and rejects ambiguous matches. It writes detailed reports to `reports/`. No barcode is generated or guessed.
+
+
+## Email verification
+Profile access is locked until a user enters a six-digit verification code. Configure `RESEND_API_KEY` and `EMAIL_FROM` in Render. In non-production development without SMTP, the verification code is printed to the server console and returned to the local UI.

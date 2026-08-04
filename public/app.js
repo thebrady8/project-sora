@@ -41,6 +41,16 @@ const playNextMaxPlaytimeFilter = document.getElementById('playNextMaxPlaytimeFi
 const playNextResetFiltersButton = document.getElementById('playNextResetFiltersButton');
 const titleInput = document.getElementById('titleInput');
 const titleSuggestions = document.getElementById('titleSuggestions');
+const barcodeInput = document.getElementById('barcodeInput');
+const scanBarcodeButton = document.getElementById('scanBarcodeButton');
+const lookupBarcodeButton = document.getElementById('lookupBarcodeButton');
+const barcodeStatus = document.getElementById('barcodeStatus');
+const barcodeScannerDialog = document.getElementById('barcodeScannerDialog');
+const barcodeVideo = document.getElementById('barcodeVideo');
+const barcodeScannerStatus = document.getElementById('barcodeScannerStatus');
+const closeBarcodeScannerButton = document.getElementById('closeBarcodeScanner');
+const msrpInput = document.getElementById('msrpInput');
+const msrpSource = document.getElementById('msrpSource');
 const gameSearch = document.getElementById('gameSearch');
 const gameSearchResults = document.getElementById('gameSearchResults');
 const friendInput = document.getElementById('friendInput');
@@ -52,17 +62,29 @@ const profilePlaytime = document.getElementById('profilePlaytime');
 const profileCompletion = document.getElementById('profileCompletion');
 const prevGameButton = document.getElementById('prevGame');
 const nextGameButton = document.getElementById('nextGame');
-const registerButton = document.getElementById('registerButton');
-const loginButton = document.getElementById('loginButton');
+const authSubmitButton = document.getElementById('authSubmitButton');
+const authLoginMode = document.getElementById('authLoginMode');
+const authRegisterMode = document.getElementById('authRegisterMode');
+const authEmailInput = document.getElementById('authEmail');
+const authPasswordInput = document.getElementById('authPassword');
+const authHeading = document.getElementById('authHeading');
+const authStatus = document.getElementById('authStatus');
+const emailVerificationPanel = document.getElementById('emailVerificationPanel');
+const emailVerificationCodeInput = document.getElementById('emailVerificationCode');
+const verifyEmailButton = document.getElementById('verifyEmailButton');
+const resendVerificationButton = document.getElementById('resendVerificationButton');
+const verificationStatus = document.getElementById('verificationStatus');
 const logoutButton = document.getElementById('logoutButton');
 const menuToggle = document.getElementById('menuToggle');
 const releasePrevButton = document.getElementById('releasePrevButton');
 const releaseNextButton = document.getElementById('releaseNextButton');
 const sideMenu = document.getElementById('sideMenu');
-const registerUsernameInput = document.getElementById('registerUsername');
-const registerPasswordInput = document.getElementById('registerPassword');
-const loginUsernameInput = document.getElementById('loginUsername');
-const loginPasswordInput = document.getElementById('loginPassword');
+const accountProfileCard = document.getElementById('accountProfileCard');
+const accountAvatar = document.getElementById('accountAvatar');
+const accountDisplayName = document.getElementById('accountDisplayName');
+const accountHandle = document.getElementById('accountHandle');
+const accountVerificationBadge = document.getElementById('accountVerificationBadge');
+const compactViewProfileButton = document.getElementById('compactViewProfileButton');
 const rememberMeCheckbox = document.getElementById('rememberMe');
 const rememberMeLoginCheckbox = document.getElementById('rememberMeLogin');
 const statusFilter = document.getElementById('statusFilter');
@@ -87,50 +109,87 @@ function initInstallButton() {
   }
 
   let deferredPrompt = null;
-  const isIphone = /iPhone|iPad|iPod/i.test(window.navigator.userAgent);
-  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+  const userAgent = window.navigator.userAgent || '';
+  const isIos = /iPhone|iPad|iPod/i.test(userAgent);
+  const isStandalone = () =>
+    window.matchMedia('(display-mode: standalone)').matches ||
+    window.navigator.standalone === true;
 
-  const updateInstallButton = () => {
-    if (isStandalone) {
-      installButton.hidden = true;
-      return;
-    }
-
-    installButton.hidden = false;
-    installButton.textContent = isIphone ? 'Share → Add to Home Screen' : 'Install App';
-    installButton.setAttribute('aria-label', isIphone ? 'Install Project Sora on iPhone' : 'Install Project Sora');
+  const hideInstallButton = () => {
+    installButton.hidden = true;
+    installButton.disabled = false;
   };
+
+  const showIosInstallButton = () => {
+    installButton.hidden = false;
+    installButton.disabled = false;
+    installButton.textContent = 'Install on iPhone';
+    installButton.setAttribute(
+      'aria-label',
+      'Show instructions for adding Project Sora to the iPhone Home Screen'
+    );
+  };
+
+  const showBrowserInstallButton = () => {
+    installButton.hidden = false;
+    installButton.disabled = false;
+    installButton.textContent = 'Install App';
+    installButton.setAttribute('aria-label', 'Install Project Sora');
+  };
+
+  if (isStandalone()) {
+    hideInstallButton();
+    return;
+  }
+
+  // iOS Safari does not expose beforeinstallprompt. Show platform-specific
+  // instructions instead of a nonfunctional browser prompt button.
+  if (isIos) {
+    showIosInstallButton();
+  } else {
+    // On desktop and Android, keep the button hidden until the browser confirms
+    // that a native install prompt is available.
+    hideInstallButton();
+  }
 
   window.addEventListener('beforeinstallprompt', (event) => {
     event.preventDefault();
     deferredPrompt = event;
-    updateInstallButton();
+    showBrowserInstallButton();
   });
 
   window.addEventListener('appinstalled', () => {
     deferredPrompt = null;
-    installButton.hidden = true;
+    hideInstallButton();
   });
 
   installButton.addEventListener('click', async () => {
-    if (deferredPrompt) {
+    if (isIos) {
+      window.alert(
+        'To install Project Sora on iPhone: tap Safari’s Share button, choose Add to Home Screen, then tap Add.'
+      );
+      return;
+    }
+
+    if (!deferredPrompt) {
+      hideInstallButton();
+      return;
+    }
+
+    installButton.disabled = true;
+
+    try {
       deferredPrompt.prompt();
       await deferredPrompt.userChoice;
+    } catch (error) {
+      console.error('Project Sora installation prompt failed.', error);
+    } finally {
       deferredPrompt = null;
-      installButton.hidden = true;
-      return;
+      hideInstallButton();
     }
-
-    if (isIphone) {
-      window.alert('On iPhone, open the Share sheet and choose Add to Home Screen to install Project Sora.');
-      return;
-    }
-
-    installButton.hidden = true;
   });
-
-  updateInstallButton();
 }
+
 const backToLibraryFromStatsButton = document.getElementById('backToLibraryFromStats');
 const queueContainer = document.getElementById('queueContainer');
 const notificationsContainer = document.getElementById('notificationsContainer');
@@ -145,6 +204,19 @@ const profileVisibilitySelect = document.getElementById('profileVisibilitySelect
 const libraryVisibilitySelect = document.getElementById('libraryVisibilitySelect');
 const reviewsVisibilitySelect = document.getElementById('reviewsVisibilitySelect');
 const activityVisibilitySelect = document.getElementById('activityVisibilitySelect');
+const profileDisplayNameInput = document.getElementById('profileDisplayNameInput');
+const profileBioInput = document.getElementById('profileBioInput');
+const profileAvatarUrlInput = document.getElementById('profileAvatarUrlInput');
+const profileBannerUrlInput = document.getElementById('profileBannerUrlInput');
+const favoriteGamesEditor = document.getElementById('favoriteGamesEditor');
+const saveProfileButton = document.getElementById('saveProfileButton');
+const viewOwnProfileButton = document.getElementById('viewOwnProfileButton');
+const profileEditorStatus = document.getElementById('profileEditorStatus');
+const publicProfilePage = document.getElementById('publicProfilePage');
+const publicProfileContent = document.getElementById('publicProfileContent');
+const publicProfileHeading = document.getElementById('publicProfileHeading');
+const backFromProfileButton = document.getElementById('backFromProfileButton');
+
 
 const rememberMePreference = localStorage.getItem(REMEMBER_ME_KEY) === 'true';
 let currentUser = rememberMePreference ? localStorage.getItem('gamevault-current-user') || '' : '';
@@ -158,6 +230,8 @@ let gameMatchIndex = 0;
 let latestSearchResults = [];
 let playNextState = createRecommendationState();
 let playNextFilters = { platform: '', genre: '', maxPlaytimeMinutes: Number.POSITIVE_INFINITY, includeCompleted: false, includeDropped: false };
+let currentProfileSettings = { displayName: '', bio: '', avatarUrl: '', bannerUrl: '', favoriteGameIds: [] };
+
 
 function getPlayNextStorageKey() {
   return 'gamevault-play-next-state';
@@ -350,10 +424,14 @@ function renderDetailSkeleton(title = 'Loading details') {
   `;
 
   if (mainContent) {
+    mainContent.classList.remove('content-area--profile-view');
     mainContent.classList.add('hidden');
   }
   if (detailPage) {
     detailPage.classList.remove('hidden');
+  }
+  if (publicProfilePage) {
+    publicProfilePage.classList.add('hidden');
   }
 }
 
@@ -498,6 +576,7 @@ function renderCollectionStatistics() {
 
 function showStatisticsView() {
   if (mainContent) {
+    mainContent.classList.remove('content-area--profile-view');
     mainContent.classList.add('hidden');
   }
   if (detailPage) {
@@ -505,6 +584,9 @@ function showStatisticsView() {
   }
   if (statisticsPage) {
     statisticsPage.classList.remove('hidden');
+  }
+  if (publicProfilePage) {
+    publicProfilePage.classList.add('hidden');
   }
   renderCollectionStatistics();
   window.location.hash = '#statistics';
@@ -831,10 +913,9 @@ async function logout() {
   currentUser = '';
   authToken = '';
   usernameInput.value = '';
-  loginUsernameInput.value = '';
-  loginPasswordInput.value = '';
-  registerUsernameInput.value = '';
-  registerPasswordInput.value = '';
+  if (authEmailInput) authEmailInput.value = '';
+  if (authPasswordInput) authPasswordInput.value = '';
+  setEmailVerificationState(false);
   setRememberPreference(false);
   clearStoredAuth();
   syncRememberCheckboxes();
@@ -882,9 +963,13 @@ async function restoreRememberedSession() {
   usernameInput.value = currentUser;
 
   try {
+    const authStatusResponse = await apiRequest('/api/auth/status');
+    setEmailVerificationState(Boolean(authStatusResponse.emailVerified));
+    updateCompactAccountCard();
     await Promise.all([loadLibraryFromServer(), loadWishlistFromServer(), loadQueueFromServer()]);
     await loadFriendState();
     await loadPrivacySettings();
+    if (emailVerified) await loadProfileSettings();
     await loadNotifications();
     renderLibrary();
     updateSummary();
@@ -1067,28 +1152,28 @@ function clearProfilePreview() {
   activeLibraryOwner = null;
 }
 
-function showProfilePreview(profileName) {
-  const normalizedHandle = String(profileName || '').trim();
+async function showProfilePreview(profileName) {
+  const normalizedHandle = String(profileName || '').trim().replace(/^@/, '');
   if (!normalizedHandle) {
     return false;
   }
 
-  const libraryOwners = Object.keys(loadUsers());
-  const matchingOwner = libraryOwners.find((owner) => {
-    const publicHandle = createPublicHandle(owner);
-    const normalizedCandidate = normalizeEmail(profileName);
-    return publicHandle === normalizedHandle || normalizeEmail(owner) === normalizedCandidate;
-  });
-  if (!matchingOwner) {
+  try {
+    renderPublicProfileSkeleton();
+    const response = await apiRequest(`/api/profile/${encodeURIComponent(normalizedHandle)}`);
+    renderPublicProfilePage(response);
+    const nextHash = `#profile/${encodeURIComponent(response?.profile?.handle || normalizedHandle)}`;
+    if (window.location.hash !== nextHash) {
+      window.history.pushState(null, '', nextHash);
+    }
+    return true;
+  } catch (error) {
+    if (publicProfileContent) {
+      publicProfileContent.innerHTML = `<div class="empty-state">${escapeHtml(error?.message || 'Unable to load this profile.')}</div>`;
+    }
+    showPublicProfileView();
     return false;
   }
-
-  activeLibraryOwner = matchingOwner;
-  renderLibrary();
-  updateSummary();
-  updateProfileHub();
-  showHomeView();
-  return true;
 }
 
 function sanitizeActivityEventForClient(event) {
@@ -1836,6 +1921,165 @@ function updateProfileHub() {
   renderFriendHub();
 }
 
+
+function setProfileEditorStatus(message, tone = 'idle') {
+  if (!profileEditorStatus) {
+    return;
+  }
+  profileEditorStatus.textContent = message;
+  profileEditorStatus.dataset.tone = tone;
+}
+
+function getCatalogGameTitle(game) {
+  return String(game?.name || game?.title || 'Untitled game');
+}
+
+function renderFavoriteGamesEditor(selectedIds = []) {
+  if (!favoriteGamesEditor) {
+    return;
+  }
+  const selected = Array.isArray(selectedIds) ? selectedIds.slice(0, 5) : [];
+  const options = GAME_CATALOG.slice()
+    .sort((a, b) => getCatalogGameTitle(a).localeCompare(getCatalogGameTitle(b)))
+    .map((game) => `<option value="${escapeHtml(String(game.id || ''))}">${escapeHtml(getCatalogGameTitle(game))} — ${escapeHtml(String(game.platform || 'Multiple platforms'))}</option>`)
+    .join('');
+
+  favoriteGamesEditor.innerHTML = Array.from({ length: 5 }, (_, index) => `
+    <label class="favorite-game-select-row">
+      <span>${index + 1}</span>
+      <select data-favorite-game-index="${index}" aria-label="Favorite game ${index + 1}">
+        <option value="">Select a game</option>
+        ${options}
+      </select>
+    </label>
+  `).join('');
+
+  favoriteGamesEditor.querySelectorAll('[data-favorite-game-index]').forEach((select, index) => {
+    select.value = selected[index] || '';
+  });
+}
+
+function populateProfileEditor(profile = {}) {
+  currentProfileSettings = {
+    displayName: String(profile.displayName || ''),
+    bio: String(profile.bio || ''),
+    avatarUrl: String(profile.avatarUrl || ''),
+    bannerUrl: String(profile.bannerUrl || ''),
+    favoriteGameIds: Array.isArray(profile.favoriteGameIds) ? profile.favoriteGameIds.slice(0, 5) : []
+  };
+  if (profileDisplayNameInput) profileDisplayNameInput.value = currentProfileSettings.displayName;
+  if (profileBioInput) profileBioInput.value = currentProfileSettings.bio;
+  if (profileAvatarUrlInput) profileAvatarUrlInput.value = currentProfileSettings.avatarUrl;
+  if (profileBannerUrlInput) profileBannerUrlInput.value = currentProfileSettings.bannerUrl;
+  updateCompactAccountCard();
+  renderFavoriteGamesEditor(currentProfileSettings.favoriteGameIds);
+}
+
+function collectProfileEditorData() {
+  const favoriteGameIds = [...new Set(Array.from(favoriteGamesEditor?.querySelectorAll('[data-favorite-game-index]') || [])
+    .map((select) => String(select.value || '').trim())
+    .filter(Boolean))].slice(0, 5);
+  return {
+    displayName: String(profileDisplayNameInput?.value || '').trim(),
+    bio: String(profileBioInput?.value || '').trim(),
+    avatarUrl: String(profileAvatarUrlInput?.value || '').trim(),
+    bannerUrl: String(profileBannerUrlInput?.value || '').trim(),
+    favoriteGameIds
+  };
+}
+
+async function loadProfileSettings() {
+  if (!authToken || !currentUser) {
+    populateProfileEditor({});
+    return;
+  }
+  try {
+    const response = await apiRequest('/api/profile-settings');
+    populateProfileEditor(response?.profile || {});
+    setProfileEditorStatus('Profile ready to edit.', 'success');
+  } catch (error) {
+    populateProfileEditor({});
+    setProfileEditorStatus(error?.message || 'Unable to load profile details.', 'error');
+  }
+}
+
+async function saveProfileSettings() {
+  if (!authToken || !currentUser) {
+    setProfileEditorStatus('Sign in to customize your profile.', 'error');
+    return;
+  }
+  if (saveProfileButton) saveProfileButton.disabled = true;
+  try {
+    const response = await apiRequest('/api/profile-settings', {
+      method: 'POST',
+      body: JSON.stringify(collectProfileEditorData())
+    });
+    populateProfileEditor(response?.profile || {});
+    setProfileEditorStatus('Profile updated.', 'success');
+  } catch (error) {
+    setProfileEditorStatus(error?.message || 'Unable to save profile.', 'error');
+  } finally {
+    if (saveProfileButton) saveProfileButton.disabled = false;
+  }
+}
+
+function getProfileFallbackInitial(profile) {
+  return String(profile?.displayName || profile?.handle || 'S').trim().charAt(0).toUpperCase() || 'S';
+}
+
+function renderPublicProfileSkeleton() {
+  showPublicProfileView();
+  if (publicProfileContent) {
+    publicProfileContent.innerHTML = '<div class="skeleton-card skeleton-card--detail" role="status" aria-busy="true"><div class="skeleton-block skeleton-block--hero"></div><div class="skeleton-stack"><div class="skeleton-line skeleton-line--title"></div><div class="skeleton-line skeleton-line--meta"></div></div></div>';
+  }
+}
+
+function showPublicProfileView() {
+  if (mainContent) {
+    mainContent.classList.remove('hidden');
+    mainContent.classList.add('content-area--profile-view');
+  }
+  if (detailPage) detailPage.classList.add('hidden');
+  if (statisticsPage) statisticsPage.classList.add('hidden');
+  if (publicProfilePage) publicProfilePage.classList.remove('hidden');
+}
+
+function renderPublicProfilePage(response) {
+  const profile = response?.profile || {};
+  const libraryItems = Array.isArray(response?.library?.items) ? response.library.items : [];
+  const favoriteGames = Array.isArray(profile.favoriteGames) ? profile.favoriteGames : [];
+  const completedCount = libraryItems.filter((game) => game.status === 'Completed').length;
+  const totalPlaytime = libraryItems.reduce((sum, game) => sum + Number(game.playtimeMinutes || 0), 0);
+  const bannerStyle = profile.bannerUrl ? ` style="background-image: linear-gradient(rgba(2,6,23,.18), rgba(2,6,23,.72)), url('${escapeHtml(profile.bannerUrl)}')"` : '';
+  const avatarMarkup = profile.avatarUrl
+    ? `<img class="public-profile-avatar" src="${escapeHtml(profile.avatarUrl)}" alt="${escapeHtml(profile.displayName || profile.handle || 'User')} profile picture" referrerpolicy="no-referrer" />`
+    : `<div class="public-profile-avatar public-profile-avatar--fallback" aria-label="Default profile picture">${escapeHtml(getProfileFallbackInitial(profile))}</div>`;
+  const favoritesMarkup = favoriteGames.length
+    ? favoriteGames.map((game) => `<article class="favorite-game-card"><img src="${escapeHtml(game.image || 'https://placehold.co/300x400/1e293b/ffffff?text=Game')}" alt="${escapeHtml(game.title)} cover" loading="lazy" referrerpolicy="no-referrer" /><h4>${escapeHtml(game.title)}</h4><p>${escapeHtml(game.platform || '')}</p></article>`).join('')
+    : '<p class="profile-empty-favorites">No favorite games selected yet.</p>';
+
+  if (publicProfileHeading) publicProfileHeading.textContent = `${profile.displayName || profile.handle || 'User'}'s Profile`;
+  if (publicProfileContent) {
+    publicProfileContent.innerHTML = `
+      <article class="public-profile-hero">
+        <div class="public-profile-banner"${bannerStyle}></div>
+        <div class="public-profile-identity">
+          ${avatarMarkup}
+          <div><h3 class="public-profile-name">${escapeHtml(profile.displayName || profile.handle || 'Project Sora User')}</h3><p class="public-profile-handle">@${escapeHtml(profile.handle || 'user')}</p></div>
+        </div>
+        <p class="public-profile-bio">${escapeHtml(profile.bio || 'This player has not added a bio yet.')}</p>
+        <div class="public-profile-stats">
+          <div class="public-profile-stat"><span>Games</span><strong>${response?.library?.available ? libraryItems.length : 'Private'}</strong></div>
+          <div class="public-profile-stat"><span>Completed</span><strong>${response?.library?.available ? completedCount : 'Private'}</strong></div>
+          <div class="public-profile-stat"><span>Playtime</span><strong>${response?.library?.available ? escapeHtml(formatPlaytime(totalPlaytime)) : 'Private'}</strong></div>
+        </div>
+      </article>
+      <section class="favorite-games-panel"><h3>Top 5 Favorite Games</h3><div class="favorite-games-grid">${favoritesMarkup}</div></section>
+    `;
+  }
+  showPublicProfileView();
+}
+
 function setPrivacyStatus(message, tone = 'idle') {
   if (!privacyStatus) {
     return;
@@ -1938,6 +2182,7 @@ async function previewMyPublicProfile() {
   try {
     const response = await apiRequest(`/api/profile/${encodeURIComponent(currentUser)}`);
     renderProfilePreviewCard(response);
+    renderPublicProfilePage(response);
     setPrivacyStatus('Public profile preview loaded.', 'success');
   } catch (error) {
     renderProfilePreviewCard({ profile: { available: false, handle: currentUser }, library: { available: false, message: error?.message || 'Unable to preview profile.' }, reviews: { available: false, message: '' }, activity: { available: false, message: '' } });
@@ -2523,6 +2768,8 @@ async function getGameMetadata(title) {
       metacriticScore: 0,
       platform: '',
       price: 0,
+      msrp: 0,
+      barcode: '',
       id: ''
     };
   }
@@ -2538,6 +2785,8 @@ async function getGameMetadata(title) {
         metacriticScore: match.metacriticScore,
         platform: match.platform,
         price: match.price,
+        msrp: Number(match.msrp ?? match.price ?? 0),
+        barcode: Array.isArray(match.barcodes) ? (match.barcodes[0] || '') : (match.barcode || ''),
         id: match.id || match.name
       };
     }
@@ -2554,6 +2803,8 @@ async function getGameMetadata(title) {
       metacriticScore: 0,
       platform: '',
       price: 0,
+      msrp: 0,
+      barcode: '',
       id: trimmedTitle
     };
   }
@@ -2565,8 +2816,134 @@ async function getGameMetadata(title) {
     metacriticScore: fallbackMatch.metacriticScore,
     platform: fallbackMatch.platform,
     price: fallbackMatch.price,
+    msrp: Number(fallbackMatch.msrp ?? fallbackMatch.price ?? 0),
+    barcode: Array.isArray(fallbackMatch.barcodes) ? (fallbackMatch.barcodes[0] || '') : (fallbackMatch.barcode || ''),
     id: fallbackMatch.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
   };
+}
+
+function setAutofillStatus(message, isError = false) {
+  if (!barcodeStatus) return;
+  barcodeStatus.textContent = message;
+  barcodeStatus.classList.toggle('field-help--error', Boolean(isError));
+}
+
+function applyGameMetadata(metadata, options = {}) {
+  if (!metadata) return;
+  if (metadata.title) titleInput.value = metadata.title;
+  const platformInput = document.getElementById('platformInput');
+  if (platformInput && metadata.platform) platformInput.value = metadata.platform;
+  const coverInput = document.querySelector('input[name="coverImage"]');
+  if (coverInput && metadata.image) coverInput.value = metadata.image;
+  const metacriticInput = document.querySelector('input[name="metacriticScore"]');
+  if (metacriticInput && Number(metadata.metacriticScore) > 0) metacriticInput.value = metadata.metacriticScore;
+  const currentValueInput = document.getElementById('currentValueInput') || document.querySelector('input[name="currentValue"]');
+  if (currentValueInput && Number(metadata.price) > 0) currentValueInput.value = Number(metadata.price).toFixed(2);
+  if (msrpInput && Number(metadata.msrp) > 0) msrpInput.value = Number(metadata.msrp).toFixed(2);
+  if (barcodeInput && metadata.barcode) barcodeInput.value = metadata.barcode;
+  if (msrpSource) {
+    msrpSource.textContent = Number(metadata.msrp) > 0
+      ? 'Autofilled from the Project Sora catalog; verify edition and region before saving.'
+      : 'MSRP was not available for this catalog result.';
+  }
+  if (options.message) setAutofillStatus(options.message, false);
+}
+
+async function lookupBarcode(barcodeValue) {
+  const normalized = String(barcodeValue || '').replace(/[^0-9]/g, '');
+  if (normalized.length < 8 || normalized.length > 14) {
+    setAutofillStatus('Enter a valid 8–14 digit UPC or EAN.', true);
+    return null;
+  }
+
+  setAutofillStatus('Looking up barcode…');
+  try {
+    const response = await apiRequest(`/api/games/barcode?code=${encodeURIComponent(normalized)}`);
+    const match = response?.game || response;
+    if (!match?.name) throw new Error('No match');
+    const metadata = {
+      title: match.name,
+      image: match.image || '',
+      description: match.description || '',
+      metacriticScore: Number(match.metacriticScore || 0),
+      platform: match.platform || '',
+      price: Number(match.price || 0),
+      msrp: Number(match.msrp ?? match.price ?? 0),
+      barcode: normalized,
+      id: match.id || match.name
+    };
+    applyGameMetadata(metadata, { message: `Found ${match.name}. Review the edition and price before saving.` });
+    return metadata;
+  } catch {
+    setAutofillStatus('No catalog match was found. Keep the barcode and search by title, or enter the game manually.', true);
+    return null;
+  }
+}
+
+let barcodeMediaStream = null;
+let barcodeScanTimer = null;
+
+function stopBarcodeScanner() {
+  if (barcodeScanTimer) {
+    window.clearTimeout(barcodeScanTimer);
+    barcodeScanTimer = null;
+  }
+  if (barcodeMediaStream) {
+    barcodeMediaStream.getTracks().forEach((track) => track.stop());
+    barcodeMediaStream = null;
+  }
+  if (barcodeVideo) barcodeVideo.srcObject = null;
+  if (barcodeScannerDialog?.open) barcodeScannerDialog.close();
+}
+
+async function scanBarcodeFrame(detector) {
+  if (!barcodeVideo || !barcodeScannerDialog?.open) return;
+  try {
+    const barcodes = await detector.detect(barcodeVideo);
+    const result = barcodes.find((entry) => entry.rawValue);
+    if (result) {
+      const code = String(result.rawValue).replace(/[^0-9]/g, '');
+      if (barcodeInput) barcodeInput.value = code;
+      if (barcodeScannerStatus) barcodeScannerStatus.textContent = `Scanned ${code}. Looking it up…`;
+      stopBarcodeScanner();
+      await lookupBarcode(code);
+      return;
+    }
+  } catch {
+    // Keep scanning; transient detection errors are expected while the camera focuses.
+  }
+  barcodeScanTimer = window.setTimeout(() => void scanBarcodeFrame(detector), 250);
+}
+
+async function startBarcodeScanner() {
+  if (!barcodeScannerDialog || !barcodeVideo) return;
+  if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) {
+    setAutofillStatus('Camera barcode scanning is not supported by this browser. Enter the barcode manually instead.', true);
+    barcodeInput?.focus();
+    return;
+  }
+
+  try {
+    const supported = await window.BarcodeDetector.getSupportedFormats();
+    const wanted = ['upc_a', 'upc_e', 'ean_8', 'ean_13'];
+    const formats = wanted.filter((format) => supported.includes(format));
+    const detector = new window.BarcodeDetector({ formats: formats.length ? formats : supported });
+    barcodeScannerDialog.showModal();
+    if (barcodeScannerStatus) barcodeScannerStatus.textContent = 'Starting rear camera…';
+    barcodeMediaStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    });
+    barcodeVideo.srcObject = barcodeMediaStream;
+    await barcodeVideo.play();
+    if (barcodeScannerStatus) barcodeScannerStatus.textContent = 'Center the barcode inside the frame.';
+    void scanBarcodeFrame(detector);
+  } catch (error) {
+    stopBarcodeScanner();
+    setAutofillStatus(error?.name === 'NotAllowedError'
+      ? 'Camera permission was denied. Allow camera access or enter the barcode manually.'
+      : 'The camera could not start. Enter the barcode manually instead.', true);
+  }
 }
 
 function attachSuggestionEvents() {
@@ -2578,28 +2955,7 @@ function attachSuggestionEvents() {
 
     const selectedTitle = item.getAttribute('data-title');
     const metadata = await getGameMetadata(selectedTitle);
-    titleInput.value = selectedTitle;
-
-    const platformInput = document.getElementById('platformInput');
-    if (platformInput && metadata.platform) {
-      platformInput.value = metadata.platform;
-    }
-
-    const coverInput = document.querySelector('input[name="coverImage"]');
-    if (coverInput) {
-      coverInput.value = metadata.image || '';
-    }
-
-    const metacriticInput = document.querySelector('input[name="metacriticScore"]');
-    if (metacriticInput && metadata.metacriticScore) {
-      metacriticInput.value = metadata.metacriticScore;
-    }
-
-    const currentValueInput = document.querySelector('input[name="currentValue"]');
-    if (currentValueInput && metadata.price) {
-      currentValueInput.value = metadata.price;
-    }
-
+    applyGameMetadata(metadata, { message: `Autofilled ${metadata.title || selectedTitle}. Review pricing before saving.` });
     titleSuggestions.classList.add('hidden');
   });
 }
@@ -2750,6 +3106,8 @@ gameForm.addEventListener('submit', async (event) => {
     condition: formData.get('condition').toString().trim(),
     purchasePrice: Number(formData.get('purchasePrice') || 0),
     currentValue: Number(formData.get('currentValue') || metadata.price || 0),
+    msrp: Number(formData.get('msrp') || metadata.msrp || metadata.price || 0),
+    barcode: String(formData.get('barcode') || metadata.barcode || '').replace(/[^0-9]/g, ''),
     metacriticScore: Number(formData.get('metacriticScore') || metadata.metacriticScore || 0),
     notes: formData.get('notes').toString().trim(),
     coverImage: formData.get('coverImage')?.toString().trim() || metadata.image || '',
@@ -2828,6 +3186,7 @@ async function handleGameMatchDecision(action) {
 function showHomeView() {
   if (mainContent) {
     mainContent.classList.remove('hidden');
+    mainContent.classList.remove('content-area--profile-view');
     mainContent.focus();
   }
   if (detailPage) {
@@ -2835,6 +3194,9 @@ function showHomeView() {
   }
   if (statisticsPage) {
     statisticsPage.classList.add('hidden');
+  }
+  if (publicProfilePage) {
+    publicProfilePage.classList.add('hidden');
   }
   window.location.hash = '';
 }
@@ -3493,6 +3855,20 @@ gameSearchResults.addEventListener('keydown', (event) => {
   showGameView(focusedItem.getAttribute('data-game-id'));
 });
 
+scanBarcodeButton?.addEventListener('click', () => void startBarcodeScanner());
+lookupBarcodeButton?.addEventListener('click', () => void lookupBarcode(barcodeInput?.value));
+barcodeInput?.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    void lookupBarcode(barcodeInput.value);
+  }
+});
+closeBarcodeScannerButton?.addEventListener('click', stopBarcodeScanner);
+barcodeScannerDialog?.addEventListener('cancel', (event) => {
+  event.preventDefault();
+  stopBarcodeScanner();
+});
+
 titleInput.addEventListener('focus', () => {
   populateTitleSuggestions();
 });
@@ -3707,95 +4083,114 @@ document.addEventListener('click', (event) => {
   }
 });
 
-registerButton.addEventListener('click', async () => {
+
+let authMode = 'login';
+let emailVerified = false;
+
+function setAuthMode(mode) {
+  authMode = mode === 'register' ? 'register' : 'login';
+  const registering = authMode === 'register';
+  authLoginMode?.classList.toggle('is-active', !registering);
+  authRegisterMode?.classList.toggle('is-active', registering);
+  authLoginMode?.setAttribute('aria-selected', String(!registering));
+  authRegisterMode?.setAttribute('aria-selected', String(registering));
+  if (authHeading) authHeading.textContent = registering ? 'Create your Project Sora account' : 'Log in to Project Sora';
+  if (authSubmitButton) authSubmitButton.textContent = registering ? 'Create account' : 'Log in';
+  if (authPasswordInput) authPasswordInput.autocomplete = registering ? 'new-password' : 'current-password';
+  if (authStatus) authStatus.textContent = '';
+}
+
+function setEmailVerificationState(verified, message = '') {
+  emailVerified = Boolean(verified);
+  emailVerificationPanel?.classList.toggle('hidden', emailVerified || !currentUser);
+  accountProfileCard?.classList.toggle('hidden', !currentUser);
+  if (accountVerificationBadge) {
+    accountVerificationBadge.textContent = emailVerified ? 'Verified' : 'Unverified';
+    accountVerificationBadge.dataset.verified = String(emailVerified);
+  }
+  document.querySelectorAll('.profile-editor-panel input, .profile-editor-panel textarea, .profile-editor-panel button, .profile-editor-panel select').forEach((element) => {
+    element.disabled = !emailVerified;
+  });
+  if (compactViewProfileButton) compactViewProfileButton.disabled = !emailVerified;
+  if (viewOwnProfileButton) viewOwnProfileButton.disabled = !emailVerified;
+  if (message && verificationStatus) verificationStatus.textContent = message;
+}
+
+function updateCompactAccountCard() {
+  if (!currentUser) return setEmailVerificationState(false);
+  const profile = currentProfileSettings || {};
+  const display = profile.displayName || currentUser.split('@')[0] || 'Project Sora User';
+  if (accountDisplayName) accountDisplayName.textContent = display;
+  if (accountHandle) accountHandle.textContent = emailVerified ? `@${createPublicHandle(currentUser)}` : 'Verify email to unlock profile';
+  if (accountAvatar) accountAvatar.textContent = display.charAt(0).toUpperCase();
+}
+
+async function applyAuthenticatedSession(data, shouldRemember) {
+  authToken = data.token;
+  clearProfilePreview();
+  currentUser = data.user;
+  usernameInput.value = currentUser;
+  if (shouldRemember) { setRememberPreference(true); persistSession(currentUser, authToken, true); }
+  else { setRememberPreference(false); clearStoredAuth(); }
+  setEmailVerificationState(Boolean(data.emailVerified), data.verificationRequired ? 'Check your email for a six-digit verification code.' : 'Email verified.');
+  updateCompactAccountCard();
+  await Promise.all([loadLibraryFromServer(), loadWishlistFromServer(), loadQueueFromServer()]);
+  await loadFriendState();
+  await loadPrivacySettings();
+  if (emailVerified) await loadProfileSettings();
+  await loadNotifications();
+  renderLibrary(); renderWishlistView(); renderQueueView(); updateProfileHub();
+}
+
+authLoginMode?.addEventListener('click', () => setAuthMode('login'));
+authRegisterMode?.addEventListener('click', () => setAuthMode('register'));
+
+authSubmitButton?.addEventListener('click', async () => {
   try {
-    const email = normalizeEmail(registerUsernameInput.value);
-    const password = registerPasswordInput.value.trim();
+    const email = normalizeEmail(authEmailInput?.value || '');
+    const password = String(authPasswordInput?.value || '').trim();
     const shouldRemember = Boolean(rememberMeCheckbox?.checked);
-
-    if (!isValidEmail(email)) {
-      throw new Error('Please enter a valid email address.');
-    }
-
-    const data = await apiRequest('/api/register', {
-      method: 'POST',
-      body: JSON.stringify({
-        email,
-        password
-      })
-    });
-
-    authToken = data.token;
-    clearProfilePreview();
-    currentUser = data.user;
-    usernameInput.value = currentUser;
-    if (shouldRemember) {
-      setRememberPreference(true);
-      persistSession(currentUser, authToken, true);
-    } else {
-      setRememberPreference(false);
-      clearStoredAuth();
-    }
-    await Promise.all([loadLibraryFromServer(), loadWishlistFromServer(), loadQueueFromServer()]);
-    await loadFriendState();
-    await loadPrivacySettings();
-    await loadNotifications();
-    renderLibrary();
-    renderWishlistView();
-    renderQueueView();
+    if (!isValidEmail(email)) throw new Error('Please enter a valid email address.');
+    if (!password) throw new Error('Please enter your password.');
+    authSubmitButton.disabled = true;
+    const data = await apiRequest(authMode === 'register' ? '/api/register' : '/api/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+    await applyAuthenticatedSession(data, shouldRemember);
+    if (data.developmentCode && verificationStatus) verificationStatus.textContent = `Development verification code: ${data.developmentCode}`;
+    if (authStatus) authStatus.textContent = authMode === 'register' ? 'Account created. Verify your email to unlock your profile.' : 'Logged in.';
   } catch (error) {
-    const message = error?.message || 'Registration failed.';
-    setSyncStatus(`Registration failed: ${message}`, 'error');
-    alert(message);
-  }
+    const message = error?.message || 'Account access failed.';
+    if (authStatus) authStatus.textContent = message;
+    setSyncStatus(message, 'error');
+  } finally { authSubmitButton.disabled = false; }
 });
 
-loginButton.addEventListener('click', async () => {
+verifyEmailButton?.addEventListener('click', async () => {
   try {
-    const email = normalizeEmail(loginUsernameInput.value);
-    const password = loginPasswordInput.value.trim();
-    const shouldRemember = Boolean(rememberMeLoginCheckbox?.checked);
-
-    if (!isValidEmail(email)) {
-      throw new Error('Please enter a valid email address.');
-    }
-
-    const data = await apiRequest('/api/login', {
-      method: 'POST',
-      body: JSON.stringify({
-        email,
-        password
-      })
-    });
-
-    authToken = data.token;
-    clearProfilePreview();
-    currentUser = data.user;
-    usernameInput.value = currentUser;
-    if (shouldRemember) {
-      setRememberPreference(true);
-      persistSession(currentUser, authToken, true);
-    } else {
-      setRememberPreference(false);
-      clearStoredAuth();
-    }
-    await Promise.all([loadLibraryFromServer(), loadWishlistFromServer(), loadQueueFromServer()]);
-    await loadFriendState();
-    await loadPrivacySettings();
-    await loadNotifications();
-    renderLibrary();
-    renderWishlistView();
-    renderQueueView();
-  } catch (error) {
-    const message = error?.message || 'Login failed.';
-    setSyncStatus(`Login failed: ${message}`, 'error');
-    alert(message);
-  }
+    const code = String(emailVerificationCodeInput?.value || '').replace(/\D/g, '').slice(0, 6);
+    const response = await apiRequest('/api/auth/verify-email', { method: 'POST', body: JSON.stringify({ code }) });
+    setEmailVerificationState(Boolean(response.emailVerified), 'Email verified. Your profile is now unlocked.');
+    await loadProfileSettings(); updateCompactAccountCard();
+  } catch (error) { if (verificationStatus) verificationStatus.textContent = error?.message || 'Verification failed.'; }
 });
+
+resendVerificationButton?.addEventListener('click', async () => {
+  try {
+    resendVerificationButton.disabled = true;
+    const response = await apiRequest('/api/auth/resend-verification', { method: 'POST' });
+    if (verificationStatus) verificationStatus.textContent = response.developmentCode ? `Development verification code: ${response.developmentCode}` : 'A new code was sent.';
+  } catch (error) { if (verificationStatus) verificationStatus.textContent = error?.message || 'Unable to resend code.'; }
+  finally { resendVerificationButton.disabled = false; }
+});
+
+compactViewProfileButton?.addEventListener('click', () => viewOwnProfileButton?.click());
+setAuthMode('login');
 
 logoutButton.addEventListener('click', logout);
 previewProfileButton?.addEventListener('click', previewMyPublicProfile);
 savePrivacyButton?.addEventListener('click', savePrivacySettings);
+saveProfileButton?.addEventListener('click', saveProfileSettings);
+viewOwnProfileButton?.addEventListener('click', () => currentUser && showProfilePreview(currentUser));
+backFromProfileButton?.addEventListener('click', showHomeView);
 [rememberMeCheckbox, rememberMeLoginCheckbox].forEach((checkbox) => {
   checkbox?.addEventListener('change', () => {
     if (checkbox.checked) {
@@ -3864,4 +4259,363 @@ async function initializeApp() {
   }
 }
 
-void initializeApp();
+
+window.addEventListener('hashchange', () => {
+  const match = window.location.hash.match(/^#profile\/(.+)$/);
+  if (match) {
+    void showProfilePreview(decodeURIComponent(match[1]));
+  }
+});
+
+
+
+// Game Finder: swipe-based catalog discovery
+const gameFinderNavButton = document.getElementById('gameFinderNavButton');
+const gameFinderPage = document.getElementById('gameFinderPage');
+const closeGameFinderButton = document.getElementById('closeGameFinderButton');
+const gameFinderCard = document.getElementById('gameFinderCard');
+const gameFinderLoading = document.getElementById('gameFinderLoading');
+const gameFinderEmpty = document.getElementById('gameFinderEmpty');
+const gameFinderPassButton = document.getElementById('gameFinderPassButton');
+const gameFinderLikeButton = document.getElementById('gameFinderLikeButton');
+const gameFinderStrongButton = document.getElementById('gameFinderStrongButton');
+const gameFinderUndoButton = document.getElementById('gameFinderUndoButton');
+const gameFinderQuickActions = document.getElementById('gameFinderQuickActions');
+const gameFinderHistoryList = document.getElementById('gameFinderHistoryList');
+const gameFinderReviewLikesButton = document.getElementById('gameFinderReviewLikesButton');
+const gameFinderReviewPassesButton = document.getElementById('gameFinderReviewPassesButton');
+const gameFinderResetButton = document.getElementById('gameFinderResetButton');
+
+let gameFinderCandidates = [];
+let gameFinderCurrent = null;
+let gameFinderLastLiked = null;
+let gameFinderHistoryMode = 'likes';
+let gameFinderPointerStart = null;
+
+function getGameFinderStorageKey() {
+  return `project-sora-game-finder:${currentUser || 'guest'}`;
+}
+
+function loadGameFinderState() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(getGameFinderStorageKey()) || '{}');
+    return {
+      decisions: Array.isArray(parsed.decisions) ? parsed.decisions.slice(-1000) : [],
+      genreWeights: parsed.genreWeights && typeof parsed.genreWeights === 'object' ? parsed.genreWeights : {},
+      platformWeights: parsed.platformWeights && typeof parsed.platformWeights === 'object' ? parsed.platformWeights : {}
+    };
+  } catch {
+    return { decisions: [], genreWeights: {}, platformWeights: {} };
+  }
+}
+
+function saveGameFinderState(state) {
+  localStorage.setItem(getGameFinderStorageKey(), JSON.stringify(state));
+}
+
+function normalizeFinderText(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function getFinderGenres(game) {
+  return String(game.genre || '')
+    .split(/[,/|;]/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function findCatalogForLibraryGame(game) {
+  const title = normalizeFinderText(game.title || game.name);
+  const platform = normalizeFinderText(game.platform);
+  return GAME_CATALOG.find((entry) => normalizeFinderText(entry.name) === title && (!platform || normalizeFinderText(entry.platform) === platform))
+    || GAME_CATALOG.find((entry) => normalizeFinderText(entry.name) === title);
+}
+
+function buildBaseFinderPreferences() {
+  const genreWeights = {};
+  const platformWeights = {};
+  const addWeight = (target, key, amount) => {
+    if (!key) return;
+    target[key] = Math.max(-8, Math.min(12, Number(target[key] || 0) + amount));
+  };
+
+  getCurrentLibrary().map(normalizeGame).forEach((game) => {
+    const catalogGame = findCatalogForLibraryGame(game) || game;
+    const rating = Number(game.userRating || game.rating || game.metacriticScore || 0);
+    const completed = game.status === 'Completed' || Number(game.completionPercent || 0) >= 100;
+    const weight = rating >= 8 && rating <= 10 ? 3 : rating >= 80 ? 3 : completed ? 1.5 : 0.5;
+    getFinderGenres(catalogGame).forEach((genre) => addWeight(genreWeights, normalizeFinderText(genre), weight));
+    addWeight(platformWeights, normalizeFinderText(game.platform || catalogGame.platform), completed ? 1.5 : 0.75);
+  });
+
+  (currentProfileSettings.favoriteGameIds || []).forEach((id) => {
+    const favorite = GAME_CATALOG.find((entry) => String(entry.id) === String(id));
+    if (!favorite) return;
+    getFinderGenres(favorite).forEach((genre) => addWeight(genreWeights, normalizeFinderText(genre), 4));
+    addWeight(platformWeights, normalizeFinderText(favorite.platform), 2);
+  });
+
+  return { genreWeights, platformWeights };
+}
+
+function scoreGameFinderCandidate(game, preferences, state) {
+  const genres = getFinderGenres(game);
+  let score = 10;
+  const reasons = [];
+  const genreScore = genres.reduce((sum, genre) => sum + Number(preferences.genreWeights[normalizeFinderText(genre)] || 0) + Number(state.genreWeights[normalizeFinderText(genre)] || 0), 0);
+  if (genreScore > 0) {
+    score += genreScore * 4;
+    reasons.push(`Matches your interest in ${genres.slice(0, 2).join(' and ')}`);
+  }
+  const platformScore = Number(preferences.platformWeights[normalizeFinderText(game.platform)] || 0) + Number(state.platformWeights[normalizeFinderText(game.platform)] || 0);
+  if (platformScore > 0) {
+    score += platformScore * 3;
+    reasons.push(`Available on ${game.platform}, a platform you use`);
+  }
+  const meta = Number(game.metacriticScore || 0);
+  if (meta >= 85) { score += 8; reasons.push(`Highly rated with a score of ${meta}`); }
+  else if (meta >= 75) { score += 4; reasons.push(`Well reviewed with a score of ${meta}`); }
+  const sales = Number(game.globalSales || 0);
+  if (sales > 5) score += Math.min(5, sales / 4);
+  if (!reasons.length) reasons.push('A diverse pick to help refine your recommendations');
+  return { ...game, finderScore: score, finderReasons: reasons.slice(0, 3) };
+}
+
+function buildGameFinderCandidates() {
+  const state = loadGameFinderState();
+  const decidedIds = new Set(state.decisions.map((item) => String(item.gameId)));
+  const ownedTitles = new Set(getCurrentLibrary().map((game) => normalizeFinderText(game.title || game.name)));
+  const preferences = buildBaseFinderPreferences();
+  const uniqueTitles = new Set();
+  const eligible = [];
+
+  for (const game of GAME_CATALOG) {
+    const id = String(game.id || `${game.name}-${game.platform}`);
+    const titleKey = normalizeFinderText(game.name);
+    if (!titleKey || decidedIds.has(id) || ownedTitles.has(titleKey) || uniqueTitles.has(titleKey)) continue;
+    if (!game.genre && !game.platform) continue;
+    uniqueTitles.add(titleKey);
+    eligible.push(scoreGameFinderCandidate(game, preferences, state));
+  }
+
+  eligible.sort((a, b) => b.finderScore - a.finderScore || String(a.name).localeCompare(String(b.name)));
+  const top = eligible.slice(0, 180);
+  // Mix strong matches with a little diversity, deterministically by current decision count.
+  const offset = state.decisions.length % Math.max(top.length, 1);
+  gameFinderCandidates = top.length ? [...top.slice(offset), ...top.slice(0, offset)] : [];
+  gameFinderCurrent = gameFinderCandidates.shift() || null;
+  renderGameFinderCard();
+}
+
+function renderGameFinderCard() {
+  if (!gameFinderCard) return;
+  gameFinderQuickActions?.classList.add('hidden');
+  gameFinderEmpty?.classList.toggle('hidden', Boolean(gameFinderCurrent));
+  gameFinderCard.classList.toggle('hidden', !gameFinderCurrent);
+  if (!gameFinderCurrent) {
+    gameFinderCard.innerHTML = '';
+    return;
+  }
+  const game = gameFinderCurrent;
+  const genres = getFinderGenres(game);
+  const image = game.image || 'https://placehold.co/600x800/1e293b/ffffff?text=Project+Sora';
+  gameFinderCard.className = 'game-finder-card';
+  gameFinderCard.style.transform = '';
+  gameFinderCard.innerHTML = `
+    <span class="game-finder-stamp game-finder-stamp--pass">PASS</span>
+    <span class="game-finder-stamp game-finder-stamp--like">LIKE</span>
+    <span class="game-finder-stamp game-finder-stamp--strong">STRONG</span>
+    <img class="game-finder-cover" src="${escapeHtml(image)}" alt="${escapeHtml(game.name)} cover" loading="eager" referrerpolicy="no-referrer" />
+    <div class="game-finder-copy">
+      <p class="eyebrow">Match score ${Math.round(game.finderScore)}</p>
+      <h3>${escapeHtml(game.name)}</h3>
+      <div class="release-meta"><span class="release-pill">${escapeHtml(game.platform || 'Platform unknown')}</span>${game.releaseYear ? `<span class="release-pill">${escapeHtml(game.releaseYear)}</span>` : ''}${genres.slice(0,2).map((genre) => `<span class="release-pill">${escapeHtml(genre)}</span>`).join('')}</div>
+      <p>${escapeHtml(game.description || `${game.name} is a ${genres.join(', ') || 'game'} available for ${game.platform || 'multiple platforms'}.`)}</p>
+      <ul class="game-finder-reasons">${game.finderReasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join('')}</ul>
+    </div>`;
+}
+
+function updateFinderPreference(state, game, action, direction = 1) {
+  const amount = action === 'strong' ? 2.5 : action === 'like' ? 1.25 : -0.55;
+  getFinderGenres(game).forEach((genre) => {
+    const key = normalizeFinderText(genre);
+    state.genreWeights[key] = Math.max(-8, Math.min(12, Number(state.genreWeights[key] || 0) + amount * direction));
+  });
+  const platform = normalizeFinderText(game.platform);
+  if (platform) state.platformWeights[platform] = Math.max(-8, Math.min(12, Number(state.platformWeights[platform] || 0) + amount * .5 * direction));
+}
+
+function showGameFinderReaction(action) {
+  const deck = gameFinderCard?.closest('.game-finder-deck');
+  if (!deck) return;
+  deck.querySelectorAll('.game-finder-reaction').forEach((node) => node.remove());
+
+  const reaction = document.createElement('div');
+  const isPass = action === 'pass';
+  const isStrong = action === 'strong';
+  reaction.className = `game-finder-reaction ${isPass ? 'game-finder-reaction--pass' : isStrong ? 'game-finder-reaction--strong' : 'game-finder-reaction--like'}`;
+  reaction.setAttribute('role', 'status');
+  reaction.setAttribute('aria-live', 'polite');
+  reaction.setAttribute('aria-label', isPass ? 'Not interested' : isStrong ? 'Strong interest' : 'Interested');
+  reaction.innerHTML = `<span class="game-finder-reaction-icon" aria-hidden="true">${isPass ? '💔' : isStrong ? '💖' : '♥'}</span><span class="game-finder-reaction-label">${isPass ? 'PASS' : isStrong ? 'STRONG MATCH' : 'LIKE'}</span>`;
+  deck.append(reaction);
+
+  const duration = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 350 : 760;
+  window.setTimeout(() => reaction.remove(), duration);
+}
+
+async function decideGameFinder(action, animate = true) {
+  if (!gameFinderCurrent) return;
+  const game = gameFinderCurrent;
+  const state = loadGameFinderState();
+  const record = { gameId: String(game.id || `${game.name}-${game.platform}`), title: game.name, platform: game.platform || '', image: game.image || '', action, timestamp: new Date().toISOString(), score: game.finderScore };
+  state.decisions.push(record);
+  updateFinderPreference(state, game, action);
+  saveGameFinderState(state);
+  gameFinderLastLiked = action === 'like' || action === 'strong' ? game : null;
+
+  if (authToken) {
+    apiRequest('/api/game-finder/decision', { method: 'POST', body: JSON.stringify(record) }).catch(() => {});
+  }
+
+  if (animate) {
+    showGameFinderReaction(action);
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      gameFinderCard.classList.add(action === 'pass' ? 'is-exit-left' : action === 'strong' ? 'is-exit-up' : 'is-exit-right');
+      await new Promise((resolve) => window.setTimeout(resolve, 420));
+    } else {
+      await new Promise((resolve) => window.setTimeout(resolve, 180));
+    }
+  }
+  gameFinderCurrent = gameFinderCandidates.shift() || null;
+  renderGameFinderCard();
+  if (gameFinderLastLiked) gameFinderQuickActions?.classList.remove('hidden');
+}
+
+function undoGameFinderDecision() {
+  const state = loadGameFinderState();
+  const previous = state.decisions.pop();
+  if (!previous) return;
+  const game = GAME_CATALOG.find((entry) => String(entry.id || `${entry.name}-${entry.platform}`) === String(previous.gameId));
+  if (game) {
+    updateFinderPreference(state, game, previous.action, -1);
+    if (gameFinderCurrent) gameFinderCandidates.unshift(gameFinderCurrent);
+    gameFinderCurrent = scoreGameFinderCandidate(game, buildBaseFinderPreferences(), state);
+  }
+  saveGameFinderState(state);
+  renderGameFinderCard();
+}
+
+function showGameFinder() {
+  if (!currentUser || !authToken) {
+    setSyncStatus('Log in to use Game Finder.', 'error');
+    return;
+  }
+  mainContent?.querySelectorAll(':scope > section').forEach((section) => section.classList.add('hidden'));
+  gameFinderPage?.classList.remove('hidden');
+  gameFinderPage?.focus();
+  window.location.hash = 'game-finder';
+  buildGameFinderCandidates();
+}
+
+function closeGameFinder() {
+  gameFinderPage?.classList.add('hidden');
+  mainContent?.querySelectorAll(':scope > section:not(#statisticsPage):not(#publicProfilePage):not(#gameFinderPage)').forEach((section) => section.classList.remove('hidden'));
+  window.location.hash = '';
+}
+
+function renderGameFinderHistory(mode = gameFinderHistoryMode) {
+  gameFinderHistoryMode = mode;
+  if (!gameFinderHistoryList) return;
+  const state = loadGameFinderState();
+  const allowed = mode === 'passes' ? ['pass'] : ['like', 'strong'];
+  const items = state.decisions.filter((item) => allowed.includes(item.action)).slice().reverse().slice(0, 30);
+  gameFinderHistoryList.innerHTML = items.length ? items.map((item) => `<div class="game-finder-history-item"><img src="${escapeHtml(item.image || 'https://placehold.co/80x100/1e293b/ffffff?text=Game')}" alt="" /><div><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.platform)} · ${escapeHtml(item.action)}</p></div></div>`).join('') : '<p class="empty-state">No choices in this list yet.</p>';
+}
+
+async function handleFinderQuickAction(action) {
+  const game = gameFinderLastLiked;
+  if (!game) return;
+  const entry = { gameId: game.id || `${game.name}-${game.platform}`, title: game.name, platform: game.platform, image: game.image, price: game.price || 0 };
+  if (action === 'wishlist') await addGameToWishlist(entry);
+  if (action === 'queue') await addGameToQueue({ ...entry, status: 'Queued' });
+  if (action === 'library') {
+    await saveGame({ title: game.name, platform: game.platform || '', condition: 'Good', purchasePrice: 0, currentValue: Number(game.price || 0), msrp: Number(game.msrp || game.price || 0), metacriticScore: Number(game.metacriticScore || 0), coverImage: game.image || '', comments: [], status: 'Backlog', completionPercent: 0, notes: 'Added from Game Finder' });
+  }
+  if (action === 'details') showCatalogDetail(game);
+  gameFinderQuickActions?.classList.add('hidden');
+}
+
+function updateSwipeVisual(deltaX, deltaY) {
+  if (!gameFinderCard || !gameFinderPointerStart) return;
+  gameFinderCard.classList.add('is-swiping');
+  gameFinderCard.style.transform = `translate(${deltaX}px, ${deltaY}px) rotate(${deltaX / 24}deg)`;
+  const pass = gameFinderCard.querySelector('.game-finder-stamp--pass');
+  const like = gameFinderCard.querySelector('.game-finder-stamp--like');
+  const strong = gameFinderCard.querySelector('.game-finder-stamp--strong');
+  if (pass) pass.style.opacity = String(Math.min(1, Math.max(0, -deltaX / 110)));
+  if (like) like.style.opacity = String(Math.min(1, Math.max(0, deltaX / 110)));
+  if (strong) strong.style.opacity = String(Math.min(1, Math.max(0, -deltaY / 110)));
+}
+
+gameFinderNavButton?.addEventListener('click', showGameFinder);
+closeGameFinderButton?.addEventListener('click', closeGameFinder);
+gameFinderPassButton?.addEventListener('click', () => void decideGameFinder('pass'));
+gameFinderLikeButton?.addEventListener('click', () => void decideGameFinder('like'));
+gameFinderStrongButton?.addEventListener('click', () => void decideGameFinder('strong'));
+gameFinderUndoButton?.addEventListener('click', undoGameFinderDecision);
+gameFinderReviewLikesButton?.addEventListener('click', () => renderGameFinderHistory('likes'));
+gameFinderReviewPassesButton?.addEventListener('click', () => renderGameFinderHistory('passes'));
+gameFinderResetButton?.addEventListener('click', () => {
+  if (!window.confirm('Reset all Game Finder choices and learned preferences?')) return;
+  localStorage.removeItem(getGameFinderStorageKey());
+  if (authToken) apiRequest('/api/game-finder', { method: 'DELETE' }).catch(() => {});
+  buildGameFinderCandidates();
+  renderGameFinderHistory();
+});
+gameFinderQuickActions?.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-finder-quick]');
+  if (button) void handleFinderQuickAction(button.dataset.finderQuick);
+});
+gameFinderCard?.addEventListener('click', (event) => {
+  if (!gameFinderPointerStart && gameFinderCurrent && event.detail > 0) showCatalogDetail(gameFinderCurrent);
+});
+gameFinderCard?.addEventListener('pointerdown', (event) => {
+  gameFinderPointerStart = { x: event.clientX, y: event.clientY, id: event.pointerId };
+  gameFinderCard.setPointerCapture?.(event.pointerId);
+});
+gameFinderCard?.addEventListener('pointermove', (event) => {
+  if (!gameFinderPointerStart || event.pointerId !== gameFinderPointerStart.id) return;
+  updateSwipeVisual(event.clientX - gameFinderPointerStart.x, event.clientY - gameFinderPointerStart.y);
+});
+gameFinderCard?.addEventListener('pointerup', (event) => {
+  if (!gameFinderPointerStart) return;
+  const dx = event.clientX - gameFinderPointerStart.x;
+  const dy = event.clientY - gameFinderPointerStart.y;
+  gameFinderPointerStart = null;
+  gameFinderCard.classList.remove('is-swiping');
+  gameFinderCard.style.transform = '';
+  if (dy < -90 && Math.abs(dy) > Math.abs(dx)) void decideGameFinder('strong');
+  else if (dx > 100) void decideGameFinder('like');
+  else if (dx < -100) void decideGameFinder('pass');
+  else renderGameFinderCard();
+});
+window.addEventListener('keydown', (event) => {
+  if (gameFinderPage?.classList.contains('hidden')) return;
+  if (['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) return;
+  if (event.key === 'ArrowLeft') { event.preventDefault(); void decideGameFinder('pass'); }
+  if (event.key === 'ArrowRight') { event.preventDefault(); void decideGameFinder('like'); }
+  if (event.key === 'ArrowUp') { event.preventDefault(); void decideGameFinder('strong'); }
+  if (event.key === 'Backspace') { event.preventDefault(); undoGameFinderDecision(); }
+  if (event.key === 'Enter' && gameFinderCurrent) { event.preventDefault(); showCatalogDetail(gameFinderCurrent); }
+});
+window.addEventListener('hashchange', () => {
+  if (window.location.hash === '#game-finder') showGameFinder();
+});
+
+void initializeApp().then(() => {
+  const match = window.location.hash.match(/^#profile\/(.+)$/);
+  if (match) {
+    void showProfilePreview(decodeURIComponent(match[1]));
+  }
+});
